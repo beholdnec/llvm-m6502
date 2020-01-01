@@ -66,6 +66,11 @@ let isReMaterializable = 1 in
                      (ins i8imm:$k),
                      "_LDimm\t$dst, $k",
                      [(set i8:$dst, imm:$k)]>;
+
+  def LDimm16: Pseudo<(outs DREGS:$dst),
+                      (ins i16imm:$k),
+                      "_LDimm16\t$dst, $k",
+                      [(set i16:$dst, imm:$k)]>;
 }
 
 // Load register from the stack.
@@ -76,10 +81,24 @@ def LDstack : LoadPseudo<
   [(set i8:$dst, (load addr:$src))]
 >;
 
+def LDstack16 : LoadPseudo<
+  (outs DREGS:$dst),
+  (ins memspi:$src),
+  "_LDstack16\t$dst, $src",
+  [(set i16:$dst, (load addr:$src))]
+>;
+
 // Store register to the stack.
 def STstack : StorePseudo<
   (outs),
   (ins memspi:$dst, GPR8:$src),
   "_STstack\t$dst, $src",
   [(store i8:$src, addr:$dst)]
+>;
+
+def STstack16 : StorePseudo<
+  (outs),
+  (ins memspi:$dst, DREGS:$src),
+  "_STstack16\t$dst, $src",
+  [(store i16:$src, addr:$dst)]
 >;

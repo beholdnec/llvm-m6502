@@ -1,5 +1,6 @@
 set(LLVM_TARGET_DEFINITIONS M6502.td)
 
+tablegen(LLVM M6502GenAsmWriter.inc -gen-asm-writer)
 tablegen(LLVM M6502GenCallingConv.inc -gen-callingconv)
 tablegen(LLVM M6502GenDAGISel.inc -gen-dag-isel)
 tablegen(LLVM M6502GenInstrInfo.inc -gen-instr-info)

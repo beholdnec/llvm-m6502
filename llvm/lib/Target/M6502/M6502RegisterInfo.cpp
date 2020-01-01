@@ -31,7 +31,16 @@ BitVector M6502RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
 void M6502RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
                                             int SPAdj, unsigned FIOperandNum,
                                             RegScavenger *RS) const {
-  // TODO
+  // FIXME: this is utterly borked
+  MachineInstr &MI = *II;
+  MachineBasicBlock &MBB = *MI.getParent();
+  MachineFunction &MF = *MBB.getParent();
+  MachineFrameInfo &FrameInfo = MF.getFrameInfo();
+  const M6502FrameLowering *TFI = getFrameLowering(MF);
+
+  int Index = MI.getOperand(FIOperandNum).getIndex();
+  MI.getOperand(FIOperandNum).ChangeToImmediate(Index); // ????
+  //MI.getOperand(FIOperandNum).ChangeToImmediate(FrameInfo.getObjectOffset(Index));
 }
 
 Register M6502RegisterInfo::getFrameRegister(const MachineFunction &MF) const {

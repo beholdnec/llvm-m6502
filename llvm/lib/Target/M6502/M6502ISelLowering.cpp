@@ -18,6 +18,10 @@ M6502TargetLowering::M6502TargetLowering(const M6502TargetMachine &TM,
 
   // Compute derived properties from the register classes.
   computeRegisterProperties(Subtarget.getRegisterInfo());
+  
+  setSchedulingPreference(Sched::RegPressure);
+  
+  setMinFunctionAlignment(1);
 }
 
 const char *M6502TargetLowering::getTargetNodeName(unsigned Opcode) const {
@@ -57,6 +61,10 @@ M6502TargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
                                  const SmallVectorImpl<ISD::OutputArg> &Outs,
                                  const SmallVectorImpl<SDValue> &OutVals,
                                  const SDLoc &dl, SelectionDAG &DAG) const {
+  MachineFunction &MF = DAG.getMachineFunction();
+  MachineFrameInfo &MFI = MF.getFrameInfo();
+  auto DL = DAG.getDataLayout();
+
   // CCValAssign - represent the assignment of the return value to locations.
   SmallVector<CCValAssign, 16> RVLocs;
 
@@ -69,11 +77,35 @@ M6502TargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
   
   SmallVector<SDValue, 4> RetOps(1, Chain);
 
-  // TODO: implement returning
+  for (unsigned i = 0; i < RVLocs.size(); ++i) {
+    CCValAssign &VA = RVLocs[i];
 
-  RetOps[0] = Chain; // Update chain.
+    if (VA.isMemLoc()) {
+      EVT LocVT = VA.getLocVT();
 
-  return DAG.getNode(M6502ISD::RET_FLAG, dl, MVT::Other, RetOps);
+      // Create the frame index object for this outgoing value.
+      // FIXME: is this the correct thing to do?
+      int FI = MFI.CreateFixedObject(LocVT.getSizeInBits() / 8,
+                                     VA.getLocMemOffset(), true);
+
+      // Create the SelectionDAG nodes corresponding to a store
+      // to this location.
+      SDValue FIN = DAG.getFrameIndex(FI, getPointerTy(DL));
+      SDValue RetOp = DAG.getStore(Chain, dl, OutVals[i], FIN,
+                                   MachinePointerInfo::getFixedStack(MF, FI),
+                                   0);
+      RetOps.push_back(RetOp);
+    } else {
+      llvm_unreachable("Return value must be located in memory");
+    }
+  }
+
+  if (!RetOps.empty()) {
+    Chain = DAG.getNode(ISD::TokenFactor, dl, MVT::Other, RetOps);
+  }
+
+  // FIXME: is glue needed?
+  return DAG.getNode(M6502ISD::RET_FLAG, dl, MVT::Other, Chain);
 }
 
 SDValue M6502TargetLowering::LowerFormalArguments(

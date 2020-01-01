@@ -27,3 +27,10 @@ class Pseudo<dag outs, dag ins, string asmstr, list<dag> pattern>
   let isPseudo = 1;
   let isCodeGenOnly = 1;
 }
+
+class StorePseudo<dag outs, dag ins, string asmstr, list<dag> pattern>
+  : Pseudo<outs, ins, asmstr, pattern>
+{
+  // FIXME: needs mayStore and others?
+  //let Defs = [SP];
+}

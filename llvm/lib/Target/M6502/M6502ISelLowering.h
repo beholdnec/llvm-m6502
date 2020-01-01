@@ -14,7 +14,7 @@ enum NodeType {
   /// Start the numbering where the builtin ops leave off.
   FIRST_NUMBER = ISD::BUILTIN_OP_END,
   /// Return from subroutine.
-  RET_FLAG,
+  RETURN,
 };
 
 } // end of namespace M6502ISD

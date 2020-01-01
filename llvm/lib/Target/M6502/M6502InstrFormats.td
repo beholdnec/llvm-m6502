@@ -22,15 +22,20 @@ class M6502Inst<dag outs, dag ins, string asmstr, list<dag> pattern> : Instructi
 class Pseudo<dag outs, dag ins, string asmstr, list<dag> pattern>
   : M6502Inst<outs, ins, asmstr, pattern>
 {
-  let Pattern = pattern;
-
   let isPseudo = 1;
   let isCodeGenOnly = 1;
+}
+
+class LoadPseudo<dag outs, dag ins, string asmstr, list<dag> pattern>
+  : Pseudo<outs, ins, asmstr, pattern>
+{
+  let mayLoad = 1;
+  //let Defs = [SP];
 }
 
 class StorePseudo<dag outs, dag ins, string asmstr, list<dag> pattern>
   : Pseudo<outs, ins, asmstr, pattern>
 {
-  // FIXME: needs mayStore and others?
+  let mayStore = 1; // FIXME: is this needed?
   //let Defs = [SP];
 }

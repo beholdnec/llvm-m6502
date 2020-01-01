@@ -32,7 +32,7 @@ const char *M6502TargetLowering::getTargetNodeName(unsigned Opcode) const {
   switch (Opcode) {
   default:
     return nullptr;
-    NODE(RET_FLAG);
+    NODE(RETURN);
 #undef NODE
   }
 }
@@ -105,7 +105,7 @@ M6502TargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
   }
 
   // FIXME: is glue needed?
-  return DAG.getNode(M6502ISD::RET_FLAG, dl, MVT::Other, Chain);
+  return DAG.getNode(M6502ISD::RETURN, dl, MVT::Other, Chain);
 }
 
 SDValue M6502TargetLowering::LowerFormalArguments(

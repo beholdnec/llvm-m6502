@@ -1,0 +1,7 @@
+; TODO: header stuff
+
+[component_0]
+type = Library
+name = M6502Info
+parent = M6502
+add_to_library_groups = M6502

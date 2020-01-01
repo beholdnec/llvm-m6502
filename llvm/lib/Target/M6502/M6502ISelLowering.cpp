@@ -21,6 +21,22 @@ M6502TargetLowering::M6502TargetLowering(const M6502TargetMachine &TM,
   
   setSchedulingPreference(Sched::RegPressure);
   
+  for (MVT VT : MVT::integer_valuetypes()) {
+    for (auto N : {ISD::EXTLOAD, ISD::SEXTLOAD, ISD::ZEXTLOAD}) {
+      setLoadExtAction(N, VT, MVT::i1, Promote);
+      setLoadExtAction(N, VT, MVT::i8, Expand);
+    }
+  }
+
+  setTruncStoreAction(MVT::i16, MVT::i8, Expand);
+  
+  for (MVT VT : MVT::integer_valuetypes()) {
+    setOperationAction(ISD::ADDC, VT, Legal);
+    setOperationAction(ISD::SUBC, VT, Legal);
+    setOperationAction(ISD::ADDE, VT, Legal);
+    setOperationAction(ISD::SUBE, VT, Legal);
+  }
+  
   setMinFunctionAlignment(1);
 }
 

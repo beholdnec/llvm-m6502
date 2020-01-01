@@ -34,6 +34,19 @@ def addr : ComplexPattern<iPTR, 2, "SelectAddr", [], [SDNPWantRoot]>;
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
+// Addition
+//===----------------------------------------------------------------------===//
+
+let isCommutable = 1,
+Constraints = "$dst = $src1" in
+{
+  def ADDreg16 : Pseudo<(outs DREGS:$dst),
+                        (ins DREGS:$src1, DREGS:$src2),
+                        "_ADDreg16\t$dst, $src2",
+                        [(set i16:$dst, (add i16:$src1, i16:$src2))]>;
+}
+
+//===----------------------------------------------------------------------===//
 // Return instructions.
 //===----------------------------------------------------------------------===//
 let isTerminator = 1,
@@ -102,3 +115,25 @@ def STstack16 : StorePseudo<
   "_STstack16\t$dst, $src",
   [(store i16:$src, addr:$dst)]
 >;
+
+def SEXT : ExtensionPseudo<
+  (outs DREGS:$dst),
+  (ins GPR8:$src),
+  "_SEXT\t$dst, $src",
+  [(set i16:$dst, (sext i8:$src))]
+>;
+
+def ZEXT : ExtensionPseudo<
+  (outs DREGS:$dst),
+  (ins GPR8:$src),
+  "_ZEXT\t$dst, $src",
+  [(set i16:$dst, (zext i8:$src))]
+>;
+
+//===----------------------------------------------------------------------===//
+// Non-Instruction Patterns
+//===----------------------------------------------------------------------===//
+
+// the add instruction always writes the carry flag
+def : Pat<(addc DREGS:$src, DREGS:$src2),
+          (ADDreg16 DREGS:$src, DREGS:$src2)>;

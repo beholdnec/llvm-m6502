@@ -31,6 +31,20 @@ enum NodeType {
   ROLLOOP, ///< A loop of single left bit rotate instructions.
   RORLOOP, ///< A loop of single right bit rotate instructions.
   ASRLOOP, ///< A loop of single arithmetic shift right instructions.
+  /// M6502 conditional branches. Operand 0 is the chain operand, operand 1
+  /// is the block to branch if condition is true, operand 2 is the
+  /// condition code, and operand 3 is the flag operand produced by a CMP
+  /// or TEST instruction.
+  BRCOND,
+  /// Compare instruction.
+  CMP,
+  /// Compare with carry instruction.
+  CMPC,
+  /// Test for zero or minus instruction.
+  TST,
+  /// Operand 0 and operand 1 are selection variable, operand 2
+  /// is condition code and operand 3 is flag operand.
+  SELECT_CC
 };
 
 } // end of namespace M6502ISD
@@ -49,8 +63,11 @@ public:
   SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const override;
 
 private:
+  SDValue getM6502Cmp(SDValue LHS, SDValue RHS, ISD::CondCode CC, SDValue &AVRcc,
+                      SelectionDAG &DAG, SDLoc dl) const;
   SDValue LowerShifts(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerBR_CC(SDValue Op, SelectionDAG &DAG) const;
 
   bool CanLowerReturn(CallingConv::ID CallConv,
                       MachineFunction &MF, bool isVarArg,

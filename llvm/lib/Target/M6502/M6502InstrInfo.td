@@ -10,6 +10,9 @@ def SDT_M6502CallSeqStart : SDCallSeqStart<[SDTCisVT<0, i16>, SDTCisVT<1, i16>]>
 def SDT_M6502CallSeqEnd : SDCallSeqEnd<[SDTCisVT<0, i16>, SDTCisVT<1, i16>]>;
 def SDT_M6502Call : SDTypeProfile<0, -1, [SDTCisVT<0, iPTR>]>;
 def SDT_M6502Wrapper : SDTypeProfile<1, 1, [SDTCisSameAs<0, 1>, SDTCisPtrTy<0>]>;
+def SDT_M6502Brcond : SDTypeProfile<0, 2,
+                                    [SDTCisVT<0, OtherVT>, SDTCisVT<1, i8>]>;
+def SDT_M6502Cmp : SDTypeProfile<0, 2, [SDTCisSameAs<0, 1>]>;
 
 //===----------------------------------------------------------------------===//
 // M6502 Specific Node Definitions
@@ -27,6 +30,10 @@ def M6502call : SDNode<"M6502ISD::CALL", SDT_M6502Call,
                        [SDNPHasChain, SDNPOutGlue, SDNPOptInGlue, SDNPVariadic]>;
 
 def M6502Wrapper : SDNode<"M6502ISD::WRAPPER", SDT_M6502Wrapper>;
+
+def M6502brcond : SDNode<"M6502ISD::BRCOND", SDT_M6502Brcond,
+                       [SDNPHasChain, SDNPInGlue]>;
+def M6502cmp : SDNode<"M6502ISD::CMP", SDT_M6502Cmp, [SDNPOutGlue]>;
 
 // Shift nodes.
 def M6502asl : SDNode<"M6502ISD::LSL", SDTIntUnaryOp>;
@@ -46,7 +53,19 @@ def memspi : Operand<iPTR>
 // Addressing mode pattern reg+imm6
 def addr : ComplexPattern<iPTR, 2, "SelectAddr", [], [SDNPWantRoot]>;
 
+def brtarget : Operand<OtherVT>;
 def call_target : Operand<iPTR>;
+
+// M6502 specific condition code. These correspond to M6502_*_COND in
+// M6502InstrInfo.td. They must be kept in synch.
+def M6502_COND_EQ : PatLeaf<(i8 0)>;
+def M6502_COND_NE : PatLeaf<(i8 1)>;
+def M6502_COND_GE : PatLeaf<(i8 2)>;
+def M6502_COND_LT : PatLeaf<(i8 3)>;
+def M6502_COND_SH : PatLeaf<(i8 4)>;
+def M6502_COND_LO : PatLeaf<(i8 5)>;
+def M6502_COND_MI : PatLeaf<(i8 6)>;
+def M6502_COND_PL : PatLeaf<(i8 7)>;
 
 //===----------------------------------------------------------------------===//
 //===----------------------------------------------------------------------===//
@@ -87,6 +106,20 @@ let isCall = 1 in
                      (ins call_target:$k),
                      "_CALL\t$k",
                      [(M6502call imm:$k)]>;
+}
+
+//===----------------------------------------------------------------------===//
+// Jump instructions
+//===----------------------------------------------------------------------===//
+
+let isBarrier = 1,
+isBranch = 1,
+isTerminator = 1 in
+{
+  def JMPk : Pseudo<(outs),
+                    (ins brtarget:$k),
+                    "_JMP\t$k",
+                    [(br bb:$k)]>;
 }
 
 //===----------------------------------------------------------------------===//
@@ -176,6 +209,69 @@ isBarrier = 1 in
                       (ins),
                       "_RETURN",
                       [(M6502return)]>;
+}
+
+//===----------------------------------------------------------------------===//
+// Compare operations.
+//===----------------------------------------------------------------------===//
+
+let Defs = [SREG] in
+{
+  def CPreg : Pseudo<(outs),
+                     (ins GPR8:$src1, GPR8:$src2),
+                     "_CP\t$src1, $src2",
+                     [(M6502cmp i8:$src1, i8:$src2), (implicit SREG)]>;
+}
+
+//===----------------------------------------------------------------------===//
+// Conditional branches
+//===----------------------------------------------------------------------===//
+
+// Based on status register. We cannot simplify these into instruction aliases
+// because we also need to be able to specify a pattern to match for ISel.
+let isBranch = 1,
+isTerminator = 1,
+Uses = [SREG] in
+{
+  def BREQk : Pseudo<(outs),
+                     (ins brtarget:$target),
+                     "_BREQ\t$target",
+                     [(M6502brcond bb:$target, M6502_COND_EQ)]>;
+                     
+  def BRNEk : Pseudo<(outs),
+                     (ins brtarget:$target),
+                     "_BRNE\t$target",
+                     [(M6502brcond bb:$target, M6502_COND_NE)]>;
+
+  def BRSHk : Pseudo<(outs),
+                     (ins brtarget:$target),
+                     "_BRSH\t$target",
+                     [(M6502brcond bb:$target, M6502_COND_SH)]>;
+                     
+  def BRLOk : Pseudo<(outs),
+                     (ins brtarget:$target),
+                     "_BRLO\t$target",
+                     [(M6502brcond bb:$target, M6502_COND_LO)]>;
+                     
+  def BRMIk : Pseudo<(outs),
+                     (ins brtarget:$target),
+                     "_BRMI\t$target",
+                     [(M6502brcond bb:$target, M6502_COND_MI)]>;
+                     
+  def BRPLk : Pseudo<(outs),
+                     (ins brtarget:$target),
+                     "_BRPL\t$target",
+                     [(M6502brcond bb:$target, M6502_COND_PL)]>;
+                     
+  def BRGEk : Pseudo<(outs),
+                     (ins brtarget:$target),
+                     "_BRGE\t$target",
+                     [(M6502brcond bb:$target, M6502_COND_GE)]>;
+                     
+  def BRLTk : Pseudo<(outs),
+                     (ins brtarget:$target),
+                     "_BRLT\t$target",
+                     [(M6502brcond bb:$target, M6502_COND_LT)]>;
 }
 
 //===----------------------------------------------------------------------===//

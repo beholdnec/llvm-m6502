@@ -52,6 +52,12 @@ M6502TargetLowering::M6502TargetLowering(const M6502TargetMachine &TM,
   setOperationAction(ISD::SRA_PARTS, MVT::i16, Expand);
   setOperationAction(ISD::SRL_PARTS, MVT::i16, Expand);
   
+  setOperationAction(ISD::BR_CC, MVT::i8, Custom);
+  setOperationAction(ISD::BR_CC, MVT::i16, Custom);
+  setOperationAction(ISD::BR_CC, MVT::i32, Custom);
+  setOperationAction(ISD::BR_CC, MVT::i64, Custom);
+  setOperationAction(ISD::BRCOND, MVT::Other, Expand);
+  
   setOperationAction(ISD::MUL, MVT::i8, Expand);
   setOperationAction(ISD::MUL, MVT::i16, Expand);
   
@@ -88,6 +94,11 @@ const char *M6502TargetLowering::getTargetNodeName(unsigned Opcode) const {
     NODE(LSLLOOP);
     NODE(LSRLOOP);
     NODE(ASRLOOP);
+    NODE(BRCOND);
+    NODE(CMP);
+    NODE(CMPC);
+    NODE(TST);
+    NODE(SELECT_CC);
 #undef NODE
   }
 }
@@ -167,6 +178,219 @@ SDValue M6502TargetLowering::LowerGlobalAddress(SDValue Op,
   return DAG.getNode(M6502ISD::WRAPPER, SDLoc(Op), getPointerTy(DL), Result);
 }
 
+/// IntCCToM6502CC - Convert a DAG integer condition code to an M6502 CC.
+static M6502CC::CondCodes intCCToM6502CC(ISD::CondCode CC) {
+  switch (CC) {
+  default:
+    llvm_unreachable("Unknown condition code!");
+  case ISD::SETEQ:
+    return M6502CC::COND_EQ;
+  case ISD::SETNE:
+    return M6502CC::COND_NE;
+  case ISD::SETGE:
+    return M6502CC::COND_GE;
+  case ISD::SETLT:
+    return M6502CC::COND_LT;
+  case ISD::SETUGE:
+    return M6502CC::COND_SH;
+  case ISD::SETULT:
+    return M6502CC::COND_LO;
+  }
+}
+
+/// Returns appropriate M6502 CMP/CMPC nodes and corresponding condition code for
+/// the given operands.
+SDValue M6502TargetLowering::getM6502Cmp(SDValue LHS, SDValue RHS, ISD::CondCode CC,
+                                         SDValue &M6502cc, SelectionDAG &DAG,
+                                         SDLoc DL) const {
+  SDValue Cmp;
+  EVT VT = LHS.getValueType();
+  bool UseTest = false;
+
+  switch (CC) {
+  default:
+    break;
+  case ISD::SETLE: {
+    // Swap operands and reverse the branching condition.
+    std::swap(LHS, RHS);
+    CC = ISD::SETGE;
+    break;
+  }
+  case ISD::SETGT: {
+    if (const ConstantSDNode *C = dyn_cast<ConstantSDNode>(RHS)) {
+      switch (C->getSExtValue()) {
+      case -1: {
+        // When doing lhs > -1 use a tst instruction on the top part of lhs
+        // and use brpl instead of using a chain of cp/cpc.
+        UseTest = true;
+        M6502cc = DAG.getConstant(M6502CC::COND_PL, DL, MVT::i8);
+        break;
+      }
+      case 0: {
+        // Turn lhs > 0 into 0 < lhs since 0 can be materialized with
+        // __zero_reg__ in lhs.
+        RHS = LHS;
+        LHS = DAG.getConstant(0, DL, VT);
+        CC = ISD::SETLT;
+        break;
+      }
+      default: {
+        // Turn lhs < rhs with lhs constant into rhs >= lhs+1, this allows
+        // us to  fold the constant into the cmp instruction.
+        RHS = DAG.getConstant(C->getSExtValue() + 1, DL, VT);
+        CC = ISD::SETGE;
+        break;
+      }
+      }
+      break;
+    }
+    // Swap operands and reverse the branching condition.
+    std::swap(LHS, RHS);
+    CC = ISD::SETLT;
+    break;
+  }
+  case ISD::SETLT: {
+    if (const ConstantSDNode *C = dyn_cast<ConstantSDNode>(RHS)) {
+      switch (C->getSExtValue()) {
+      case 1: {
+        // Turn lhs < 1 into 0 >= lhs since 0 can be materialized with
+        // __zero_reg__ in lhs.
+        RHS = LHS;
+        LHS = DAG.getConstant(0, DL, VT);
+        CC = ISD::SETGE;
+        break;
+      }
+      case 0: {
+        // When doing lhs < 0 use a tst instruction on the top part of lhs
+        // and use brmi instead of using a chain of cp/cpc.
+        UseTest = true;
+        M6502cc = DAG.getConstant(M6502CC::COND_MI, DL, MVT::i8);
+        break;
+      }
+      }
+    }
+    break;
+  }
+  case ISD::SETULE: {
+    // Swap operands and reverse the branching condition.
+    std::swap(LHS, RHS);
+    CC = ISD::SETUGE;
+    break;
+  }
+  case ISD::SETUGT: {
+    // Turn lhs < rhs with lhs constant into rhs >= lhs+1, this allows us to
+    // fold the constant into the cmp instruction.
+    if (const ConstantSDNode *C = dyn_cast<ConstantSDNode>(RHS)) {
+      RHS = DAG.getConstant(C->getSExtValue() + 1, DL, VT);
+      CC = ISD::SETUGE;
+      break;
+    }
+    // Swap operands and reverse the branching condition.
+    std::swap(LHS, RHS);
+    CC = ISD::SETULT;
+    break;
+  }
+  }
+
+  // Expand 32 and 64 bit comparisons with custom CMP and CMPC nodes instead of
+  // using the default and/or/xor expansion code which is much longer.
+  if (VT == MVT::i32) {
+    SDValue LHSlo = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, LHS,
+                                DAG.getIntPtrConstant(0, DL));
+    SDValue LHShi = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, LHS,
+                                DAG.getIntPtrConstant(1, DL));
+    SDValue RHSlo = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, RHS,
+                                DAG.getIntPtrConstant(0, DL));
+    SDValue RHShi = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, RHS,
+                                DAG.getIntPtrConstant(1, DL));
+
+    if (UseTest) {
+      // When using tst we only care about the highest part.
+      SDValue Top = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i8, LHShi,
+                                DAG.getIntPtrConstant(1, DL));
+      Cmp = DAG.getNode(M6502ISD::TST, DL, MVT::Glue, Top);
+    } else {
+      Cmp = DAG.getNode(M6502ISD::CMP, DL, MVT::Glue, LHSlo, RHSlo);
+      Cmp = DAG.getNode(M6502ISD::CMPC, DL, MVT::Glue, LHShi, RHShi, Cmp);
+    }
+  } else if (VT == MVT::i64) {
+    SDValue LHS_0 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i32, LHS,
+                                DAG.getIntPtrConstant(0, DL));
+    SDValue LHS_1 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i32, LHS,
+                                DAG.getIntPtrConstant(1, DL));
+
+    SDValue LHS0 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, LHS_0,
+                               DAG.getIntPtrConstant(0, DL));
+    SDValue LHS1 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, LHS_0,
+                               DAG.getIntPtrConstant(1, DL));
+    SDValue LHS2 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, LHS_1,
+                               DAG.getIntPtrConstant(0, DL));
+    SDValue LHS3 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, LHS_1,
+                               DAG.getIntPtrConstant(1, DL));
+
+    SDValue RHS_0 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i32, RHS,
+                                DAG.getIntPtrConstant(0, DL));
+    SDValue RHS_1 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i32, RHS,
+                                DAG.getIntPtrConstant(1, DL));
+
+    SDValue RHS0 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, RHS_0,
+                               DAG.getIntPtrConstant(0, DL));
+    SDValue RHS1 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, RHS_0,
+                               DAG.getIntPtrConstant(1, DL));
+    SDValue RHS2 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, RHS_1,
+                               DAG.getIntPtrConstant(0, DL));
+    SDValue RHS3 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, RHS_1,
+                               DAG.getIntPtrConstant(1, DL));
+
+    if (UseTest) {
+      // When using tst we only care about the highest part.
+      SDValue Top = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i8, LHS3,
+                                DAG.getIntPtrConstant(1, DL));
+      Cmp = DAG.getNode(M6502ISD::TST, DL, MVT::Glue, Top);
+    } else {
+      Cmp = DAG.getNode(M6502ISD::CMP, DL, MVT::Glue, LHS0, RHS0);
+      Cmp = DAG.getNode(M6502ISD::CMPC, DL, MVT::Glue, LHS1, RHS1, Cmp);
+      Cmp = DAG.getNode(M6502ISD::CMPC, DL, MVT::Glue, LHS2, RHS2, Cmp);
+      Cmp = DAG.getNode(M6502ISD::CMPC, DL, MVT::Glue, LHS3, RHS3, Cmp);
+    }
+  } else if (VT == MVT::i8 || VT == MVT::i16) {
+    if (UseTest) {
+      // When using tst we only care about the highest part.
+      Cmp = DAG.getNode(M6502ISD::TST, DL, MVT::Glue,
+                        (VT == MVT::i8)
+                            ? LHS
+                            : DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i8,
+                                          LHS, DAG.getIntPtrConstant(1, DL)));
+    } else {
+      Cmp = DAG.getNode(M6502ISD::CMP, DL, MVT::Glue, LHS, RHS);
+    }
+  } else {
+    llvm_unreachable("Invalid comparison size");
+  }
+
+  // When using a test instruction M6502cc is already set.
+  if (!UseTest) {
+    M6502cc = DAG.getConstant(intCCToM6502CC(CC), DL, MVT::i8);
+  }
+
+  return Cmp;
+}
+
+SDValue M6502TargetLowering::LowerBR_CC(SDValue Op, SelectionDAG &DAG) const {
+  SDValue Chain = Op.getOperand(0);
+  ISD::CondCode CC = cast<CondCodeSDNode>(Op.getOperand(1))->get();
+  SDValue LHS = Op.getOperand(2);
+  SDValue RHS = Op.getOperand(3);
+  SDValue Dest = Op.getOperand(4);
+  SDLoc dl(Op);
+
+  SDValue TargetCC;
+  SDValue Cmp = getM6502Cmp(LHS, RHS, CC, TargetCC, DAG, dl);
+
+  return DAG.getNode(M6502ISD::BRCOND, dl, MVT::Other, Chain, Dest, TargetCC,
+                     Cmp);
+}
+
 SDValue M6502TargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   switch (Op.getOpcode()) {
   default:
@@ -179,6 +403,8 @@ SDValue M6502TargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const
     return LowerShifts(Op, DAG);
   case ISD::GlobalAddress:
     return LowerGlobalAddress(Op, DAG);
+  case ISD::BR_CC:
+    return LowerBR_CC(Op, DAG);
   }
 
   return SDValue();

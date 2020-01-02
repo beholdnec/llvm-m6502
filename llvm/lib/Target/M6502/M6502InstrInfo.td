@@ -219,8 +219,13 @@ let Defs = [SREG] in
 {
   def CPreg : Pseudo<(outs),
                      (ins GPR8:$src1, GPR8:$src2),
-                     "_CP\t$src1, $src2",
+                     "_CPreg\t$src1, $src2",
                      [(M6502cmp i8:$src1, i8:$src2), (implicit SREG)]>;
+                     
+  def CPreg16 : Pseudo<(outs),
+                       (ins DREGS:$src1, DREGS:$src2),
+                       "_CPreg16\t$src1, $src2",
+                       [(M6502cmp i16:$src1, i16:$src2), (implicit SREG)]>;
 }
 
 //===----------------------------------------------------------------------===//

@@ -21,6 +21,8 @@ M6502TargetLowering::M6502TargetLowering(const M6502TargetMachine &TM,
   
   setSchedulingPreference(Sched::RegPressure);
   
+  setOperationAction(ISD::GlobalAddress, MVT::i16, Custom);
+  
   for (MVT VT : MVT::integer_valuetypes()) {
     for (auto N : {ISD::EXTLOAD, ISD::SEXTLOAD, ISD::ZEXTLOAD}) {
       setLoadExtAction(N, VT, MVT::i1, Promote);
@@ -49,8 +51,33 @@ const char *M6502TargetLowering::getTargetNodeName(unsigned Opcode) const {
   default:
     return nullptr;
     NODE(RETURN);
+    NODE(WRAPPER);
 #undef NODE
   }
+}
+
+SDValue M6502TargetLowering::LowerGlobalAddress(SDValue Op,
+                                                SelectionDAG &DAG) const {
+  auto DL = DAG.getDataLayout();
+
+  const GlobalValue *GV = cast<GlobalAddressSDNode>(Op)->getGlobal();
+  int64_t Offset = cast<GlobalAddressSDNode>(Op)->getOffset();
+
+  // Create the TargetGlobalAddress node, folding in the constant offset.
+  SDValue Result =
+      DAG.getTargetGlobalAddress(GV, SDLoc(Op), getPointerTy(DL), Offset);
+  return DAG.getNode(M6502ISD::WRAPPER, SDLoc(Op), getPointerTy(DL), Result);
+}
+
+SDValue M6502TargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
+  switch (Op.getOpcode()) {
+  default:
+    llvm_unreachable("Don't know how to custom lower this!");
+  case ISD::GlobalAddress:
+    return LowerGlobalAddress(Op, DAG);
+  }
+
+  return SDValue();
 }
 
 //===----------------------------------------------------------------------===//

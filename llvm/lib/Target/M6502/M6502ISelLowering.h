@@ -15,6 +15,9 @@ enum NodeType {
   FIRST_NUMBER = ISD::BUILTIN_OP_END,
   /// Return from subroutine.
   RETURN,
+  /// A wrapper node for TargetConstantPool,
+  /// TargetExternalSymbol, and TargetGlobalAddress.
+  WRAPPER,
 };
 
 } // end of namespace M6502ISD
@@ -29,8 +32,12 @@ public:
                                const M6502Subtarget &STI);
                                
   const char *getTargetNodeName(unsigned Opcode) const override;
+  
+  SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const override;
 
 private:
+  SDValue LowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const;
+
   bool CanLowerReturn(CallingConv::ID CallConv,
                       MachineFunction &MF, bool isVarArg,
                       const SmallVectorImpl<ISD::OutputArg> &Outs,

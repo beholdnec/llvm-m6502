@@ -3,11 +3,19 @@
 include "M6502InstrFormats.td"
 
 //===----------------------------------------------------------------------===//
+// M6502 Type Profiles
+//===----------------------------------------------------------------------===//
+
+def SDT_M6502Wrapper : SDTypeProfile<1, 1, [SDTCisSameAs<0, 1>, SDTCisPtrTy<0>]>;
+
+//===----------------------------------------------------------------------===//
 // M6502 Specific Node Definitions
 //===----------------------------------------------------------------------===//
 
 def M6502return : SDNode<"M6502ISD::RETURN", SDTNone,
                          [SDNPHasChain, SDNPOptInGlue, SDNPVariadic]>;
+
+def M6502Wrapper : SDNode<"M6502ISD::WRAPPER", SDT_M6502Wrapper>;
 
 //===----------------------------------------------------------------------===//
 // M6502 Operands, Complex Patterns and Transformations Definitions.
@@ -161,6 +169,26 @@ def STstack16 : StorePseudo<
   [(store i16:$src, addr:$dst)]
 >;
 
+// Store register to memory addressed by pointer register
+
+def STptr : StorePseudo<
+  (outs),
+  (ins DREGS:$ptrreg, GPR8:$reg),
+  "_STptr\t$ptrreg, $reg",
+  [(store GPR8:$reg, i16:$ptrreg)]
+>;
+
+// Store register to absolute memory address
+
+def STabs : StorePseudo<
+  (outs),
+  (ins i16imm:$dst, GPR8:$src),
+  "_STabs\t$dst, $src",
+  [(store GPR8:$src, imm:$dst)]
+>;
+
+// Sign- and zero-extension
+
 def SEXT : ExtensionPseudo<
   (outs DREGS:$dst),
   (ins GPR8:$src),
@@ -175,9 +203,18 @@ def ZEXT : ExtensionPseudo<
   [(set i16:$dst, (zext i8:$src))]
 >;
 
+// GlobalAddress
+def : Pat<(i16 (M6502Wrapper tglobaladdr:$dst)),
+          (LDimm16 tglobaladdr:$dst)>;
+def : Pat<(store i8:$src, (i16 (M6502Wrapper tglobaladdr:$dst))),
+          (STabs tglobaladdr:$dst, i8:$src)>;
+
 //===----------------------------------------------------------------------===//
 // Non-Instruction Patterns
 //===----------------------------------------------------------------------===//
+
+// FIXME: These patterns come from AVR, but they don't seem to be necessary to
+// compile add and sub instructions...
 
 // the add instruction always reads and writes the carry flag. The carry flag
 // must be explicitly cleared.

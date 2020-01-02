@@ -42,10 +42,9 @@ void M6502InstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
 
   unsigned Opcode = 0;
   if (TRI->isTypeLegalForClass(*RC, MVT::i8)) {
-    //Opcode = M6502::STDPtrQRr;
-    llvm_unreachable("TODO: implement i8 store to stack slot");
+    Opcode = M6502::STstk;
   } else if (TRI->isTypeLegalForClass(*RC, MVT::i16)) {
-    Opcode = M6502::STstack16;
+    Opcode = M6502::STstk16;
   } else {
     llvm_unreachable("Cannot store this register into a stack slot!");
   }
@@ -77,10 +76,9 @@ void M6502InstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
 
   unsigned Opcode = 0;
   if (TRI->isTypeLegalForClass(*RC, MVT::i8)) {
-    //Opcode = AVR::LDDRdPtrQ;
-    llvm_unreachable("TODO: implement LDstack for 8-bit regs");
+    Opcode = M6502::LDstk;
   } else if (TRI->isTypeLegalForClass(*RC, MVT::i16)) {
-    Opcode = M6502::LDstack16;
+    Opcode = M6502::LDstk16;
   } else {
     llvm_unreachable("Cannot load this register from a stack slot!");
   }

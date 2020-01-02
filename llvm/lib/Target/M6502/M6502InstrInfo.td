@@ -100,25 +100,25 @@ multiclass ArithInst<string AsmName, SDPatternOperator Oper> {
     def imm : Pseudo<(outs GPR8:$dst),
                      (ins GPR8:$src, i8imm:$k),
                      AsmName # "imm\t$dst, $k",
-                     [(set i8:$dst, (Oper GPR8:$src, imm:$k)), (implicit SREG)]>;
+                     [(set i8:$dst, (Oper GPR8:$src, imm:$k))]>;
     
     // Immediate 16-bit
     def imm16 : Pseudo<(outs DREGS:$dst),
                        (ins DREGS:$src, i16imm:$k),
                        AsmName # "imm16\t$dst, $k",
-                       [(set i16:$dst, (Oper DREGS:$src, imm:$k)), (implicit SREG)]>;
+                       [(set i16:$dst, (Oper DREGS:$src, imm:$k))]>;
 
     // Register
     def reg : Pseudo<(outs GPR8:$dst),
                      (ins GPR8:$src, GPR8:$r),
                      AsmName # "reg\t$dst, $r",
-                     [(set i8:$dst, (Oper GPR8:$src, GPR8:$r)), (implicit SREG)]>;
+                     [(set i8:$dst, (Oper GPR8:$src, GPR8:$r))]>;
 
     // Register 16-bit
     def reg16 : Pseudo<(outs DREGS:$dst),
                        (ins DREGS:$src, DREGS:$r),
                        AsmName # "reg16\t$dst, $r",
-                       [(set i16:$dst, (Oper DREGS:$src, DREGS:$r)), (implicit SREG)]>;
+                       [(set i16:$dst, (Oper DREGS:$src, DREGS:$r))]>;
 
     // TODO: Absolute address, Indirect address, etc.
   }

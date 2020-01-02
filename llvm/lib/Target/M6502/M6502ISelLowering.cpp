@@ -6,6 +6,7 @@
 #include "llvm/CodeGen/SelectionDAG.h"
 
 #include "M6502TargetMachine.h"
+#include "MCTargetDesc/M6502MCTargetDesc.h"
 
 namespace llvm {
 
@@ -39,6 +40,32 @@ M6502TargetLowering::M6502TargetLowering(const M6502TargetMachine &TM,
     setOperationAction(ISD::SUBE, VT, Legal);
   }
   
+  // our shift instructions are only able to shift 1 bit at a time, so handle
+  // this in a custom way.
+  setOperationAction(ISD::SRA, MVT::i8, Custom);
+  setOperationAction(ISD::SHL, MVT::i8, Custom);
+  setOperationAction(ISD::SRL, MVT::i8, Custom);
+  setOperationAction(ISD::SRA, MVT::i16, Custom);
+  setOperationAction(ISD::SHL, MVT::i16, Custom);
+  setOperationAction(ISD::SRL, MVT::i16, Custom);
+  setOperationAction(ISD::SHL_PARTS, MVT::i16, Expand);
+  setOperationAction(ISD::SRA_PARTS, MVT::i16, Expand);
+  setOperationAction(ISD::SRL_PARTS, MVT::i16, Expand);
+  
+  setOperationAction(ISD::MUL, MVT::i8, Expand);
+  setOperationAction(ISD::MUL, MVT::i16, Expand);
+  
+  setOperationAction(ISD::SMUL_LOHI, MVT::i16, Expand);
+  setOperationAction(ISD::UMUL_LOHI, MVT::i16, Expand);
+  
+  setOperationAction(ISD::SMUL_LOHI, MVT::i8, Expand);
+  setOperationAction(ISD::UMUL_LOHI, MVT::i8, Expand);
+  
+  for (MVT VT : MVT::integer_valuetypes()) {
+    setOperationAction(ISD::MULHS, VT, Expand);
+    setOperationAction(ISD::MULHU, VT, Expand);
+  }
+  
   setMinFunctionAlignment(1);
 }
 
@@ -51,9 +78,80 @@ const char *M6502TargetLowering::getTargetNodeName(unsigned Opcode) const {
   default:
     return nullptr;
     NODE(RETURN);
+    NODE(CALL);
     NODE(WRAPPER);
+    NODE(LSL);
+    NODE(LSR);
+    NODE(ROL);
+    NODE(ROR);
+    NODE(ASR);
+    NODE(LSLLOOP);
+    NODE(LSRLOOP);
+    NODE(ASRLOOP);
 #undef NODE
   }
+}
+
+SDValue M6502TargetLowering::LowerShifts(SDValue Op, SelectionDAG &DAG) const {
+  //:TODO: this function has to be completely rewritten to produce optimal
+  // code, for now it's producing very long but correct code.
+  // FIXME: the above comment applies to AVR; it has not been verified for M6502.
+  unsigned Opc8;
+  const SDNode *N = Op.getNode();
+  EVT VT = Op.getValueType();
+  SDLoc dl(N);
+
+  // Expand non-constant shifts to loops.
+  if (!isa<ConstantSDNode>(N->getOperand(1))) {
+    switch (Op.getOpcode()) {
+    default:
+      llvm_unreachable("Invalid shift opcode!");
+    case ISD::SHL:
+      return DAG.getNode(M6502ISD::LSLLOOP, dl, VT, N->getOperand(0),
+                         N->getOperand(1));
+    case ISD::SRL:
+      return DAG.getNode(M6502ISD::LSRLOOP, dl, VT, N->getOperand(0),
+                         N->getOperand(1));
+    case ISD::ROTL:
+      return DAG.getNode(M6502ISD::ROLLOOP, dl, VT, N->getOperand(0),
+                         N->getOperand(1));
+    case ISD::ROTR:
+      return DAG.getNode(M6502ISD::RORLOOP, dl, VT, N->getOperand(0),
+                         N->getOperand(1));
+    case ISD::SRA:
+      return DAG.getNode(M6502ISD::ASRLOOP, dl, VT, N->getOperand(0),
+                         N->getOperand(1));
+    }
+  }
+
+  uint64_t ShiftAmount = cast<ConstantSDNode>(N->getOperand(1))->getZExtValue();
+  SDValue Victim = N->getOperand(0);
+
+  switch (Op.getOpcode()) {
+  case ISD::SRA:
+    Opc8 = M6502ISD::ASR;
+    break;
+  case ISD::ROTL:
+    Opc8 = M6502ISD::ROL;
+    break;
+  case ISD::ROTR:
+    Opc8 = M6502ISD::ROR;
+    break;
+  case ISD::SRL:
+    Opc8 = M6502ISD::LSR;
+    break;
+  case ISD::SHL:
+    Opc8 = M6502ISD::LSL;
+    break;
+  default:
+    llvm_unreachable("Invalid shift opcode");
+  }
+
+  while (ShiftAmount--) {
+    Victim = DAG.getNode(Opc8, dl, VT, Victim);
+  }
+
+  return Victim;
 }
 
 SDValue M6502TargetLowering::LowerGlobalAddress(SDValue Op,
@@ -73,6 +171,12 @@ SDValue M6502TargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const
   switch (Op.getOpcode()) {
   default:
     llvm_unreachable("Don't know how to custom lower this!");
+  case ISD::SHL:
+  case ISD::SRA:
+  case ISD::SRL:
+  case ISD::ROTL:
+  case ISD::ROTR:
+    return LowerShifts(Op, DAG);
   case ISD::GlobalAddress:
     return LowerGlobalAddress(Op, DAG);
   }
@@ -185,6 +289,159 @@ SDValue M6502TargetLowering::LowerFormalArguments(
                                    0));
     } else {
       llvm_unreachable("Argument must be located in memory");
+    }
+  }
+
+  return Chain;
+}
+
+//===----------------------------------------------------------------------===//
+//                  Call Calling Convention Implementation
+//===----------------------------------------------------------------------===//
+
+SDValue M6502TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
+                                       SmallVectorImpl<SDValue> &InVals) const {
+  SelectionDAG &DAG = CLI.DAG;
+  SDLoc &DL = CLI.DL;
+  SmallVectorImpl<ISD::OutputArg> &Outs = CLI.Outs;
+  SmallVectorImpl<SDValue> &OutVals = CLI.OutVals;
+  SmallVectorImpl<ISD::InputArg> &Ins = CLI.Ins;
+  SDValue Chain = CLI.Chain;
+  SDValue Callee = CLI.Callee;
+  bool &isTailCall = CLI.IsTailCall;
+  CallingConv::ID CallConv = CLI.CallConv;
+  bool isVarArg = CLI.IsVarArg;
+
+  MachineFunction &MF = DAG.getMachineFunction();
+
+  // AVR does not yet support tail call optimization.
+  isTailCall = false;
+
+  // Analyze operands of the call, assigning locations to each operand.
+  SmallVector<CCValAssign, 16> ArgLocs;
+  CCState CCInfo(CallConv, isVarArg, DAG.getMachineFunction(), ArgLocs,
+                 *DAG.getContext());
+
+  // If the callee is a GlobalAddress/ExternalSymbol node (quite common, every
+  // direct call is) turn it into a TargetGlobalAddress/TargetExternalSymbol
+  // node so that legalize doesn't hack it.
+  const Function *F = nullptr;
+  if (const GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee)) {
+    const GlobalValue *GV = G->getGlobal();
+
+    F = cast<Function>(GV);
+    Callee =
+        DAG.getTargetGlobalAddress(GV, DL, getPointerTy(DAG.getDataLayout()));
+  } else if (const ExternalSymbolSDNode *ES =
+                 dyn_cast<ExternalSymbolSDNode>(Callee)) {
+    Callee = DAG.getTargetExternalSymbol(ES->getSymbol(),
+                                         getPointerTy(DAG.getDataLayout()));
+  }
+
+  // analyzeArguments(&CLI, F, &DAG.getDataLayout(), &Outs, 0, CallConv, ArgLocs, CCInfo,
+  //                  true, isVarArg);
+  CCInfo.AnalyzeCallOperands(Outs, CC_M6502);
+
+  // Get a count of how many bytes are to be pushed on the stack.
+  unsigned NumBytes = CCInfo.getNextStackOffset();
+
+  Chain = DAG.getCALLSEQ_START(Chain, NumBytes, 0, DL);
+
+  SmallVector<SDValue, 12> ArgChains;
+
+  for (unsigned i = 0, e = ArgLocs.size(); i != e; ++i) {
+    CCValAssign &VA = ArgLocs[i];
+    SDValue Arg = OutVals[i];
+
+    if (VA.isMemLoc()) {
+      // SP points to one stack slot further so add one to adjust it.
+      // FIXME: This causes an assertion in TwoAddressInstructionPass...
+      SDValue PtrOff = DAG.getNode(
+          ISD::ADD, DL, getPointerTy(DAG.getDataLayout()),
+          DAG.getRegister(M6502::SP, getPointerTy(DAG.getDataLayout())),
+          DAG.getIntPtrConstant(VA.getLocMemOffset() + 1, DL));
+
+      SDValue MemOp =
+          DAG.getStore(Chain, DL, Arg, PtrOff,
+                        MachinePointerInfo::getStack(MF, VA.getLocMemOffset()),
+                        0);
+      ArgChains.push_back(MemOp);
+    } else {
+      llvm_unreachable("Argument must be located in memory");
+    }
+  }
+
+  if (!ArgChains.empty()) {
+    Chain = DAG.getNode(ISD::TokenFactor, DL, MVT::Other, ArgChains);
+  }
+
+  // Returns a chain & a flag for retval copy to use.
+  SDVTList NodeTys = DAG.getVTList(MVT::Other, MVT::Glue);
+  SmallVector<SDValue, 8> Ops;
+  Ops.push_back(Chain);
+  Ops.push_back(Callee);
+
+  // Add a register mask operand representing the call-preserved registers.
+  const TargetRegisterInfo *TRI = Subtarget.getRegisterInfo();
+  const uint32_t *Mask =
+      TRI->getCallPreservedMask(DAG.getMachineFunction(), CallConv);
+  assert(Mask && "Missing call preserved mask for calling convention");
+  Ops.push_back(DAG.getRegisterMask(Mask));
+
+  Chain = DAG.getNode(M6502ISD::CALL, DL, NodeTys, Ops);
+  SDValue InFlag = Chain.getValue(1);
+
+  // Create the CALLSEQ_END node.
+  Chain = DAG.getCALLSEQ_END(Chain, DAG.getIntPtrConstant(NumBytes, DL, true),
+                             DAG.getIntPtrConstant(0, DL, true), InFlag, DL);
+
+  if (!Ins.empty()) {
+    InFlag = Chain.getValue(1);
+  }
+
+  // Handle result values, copying them out of physregs into vregs that we
+  // return.
+  return LowerCallResult(Chain, InFlag, CallConv, isVarArg, Ins, DL, DAG,
+                         InVals);
+}
+
+/// Lower the result values of a call into the
+/// appropriate copies out of appropriate physical registers.
+///
+SDValue M6502TargetLowering::LowerCallResult(
+    SDValue Chain, SDValue InFlag, CallingConv::ID CallConv, bool isVarArg,
+    const SmallVectorImpl<ISD::InputArg> &Ins, const SDLoc &dl, SelectionDAG &DAG,
+    SmallVectorImpl<SDValue> &InVals) const {
+  MachineFunction &MF = DAG.getMachineFunction();
+  MachineFrameInfo &MFI = MF.getFrameInfo();
+  auto DL = DAG.getDataLayout();
+
+  // Assign locations to each value returned by this call.
+  SmallVector<CCValAssign, 16> RVLocs;
+  CCState CCInfo(CallConv, isVarArg, DAG.getMachineFunction(), RVLocs,
+                 *DAG.getContext());
+
+  // Handle runtime calling convs.
+  CCInfo.AnalyzeCallResult(Ins, CC_M6502);
+
+  // Copy all of the result registers out of their specified physreg.
+  // FIXME: Handle stack return values
+  for (CCValAssign const &RVLoc : RVLocs) {
+    if (RVLoc.isMemLoc()) {
+      EVT LocVT = RVLoc.getLocVT();
+
+      // Create the frame index object for this incoming parameter.
+      int FI = MFI.CreateFixedObject(LocVT.getSizeInBits() / 8,
+                                     RVLoc.getLocMemOffset(), true);
+
+      // Create the SelectionDAG nodes corresponding to a load
+      // from this parameter.
+      SDValue FIN = DAG.getFrameIndex(FI, getPointerTy(DL));
+      InVals.push_back(DAG.getLoad(LocVT, dl, Chain, FIN,
+                                   MachinePointerInfo::getFixedStack(MF, FI),
+                                   0));
+    } else {
+      llvm_unreachable("Return value must reside in memory");
     }
   }
 

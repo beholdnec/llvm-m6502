@@ -17,7 +17,13 @@ public:
 
   const uint16_t *
   getCalleeSavedRegs(const MachineFunction *MF = 0) const override;
+  const uint32_t *getCallPreservedMask(const MachineFunction &MF,
+                                       CallingConv::ID CC) const override;
   BitVector getReservedRegs(const MachineFunction &MF) const override;
+  
+  const TargetRegisterClass *
+  getLargestLegalSuperClass(const TargetRegisterClass *RC,
+                            const MachineFunction &MF) const override;
   
   /// Stack Frame Processing Methods
   void eliminateFrameIndex(MachineBasicBlock::iterator MI, int SPAdj,

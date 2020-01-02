@@ -15,9 +15,22 @@ enum NodeType {
   FIRST_NUMBER = ISD::BUILTIN_OP_END,
   /// Return from subroutine.
   RETURN,
+  /// Represents an abstract call instruction,
+  /// which includes a bunch of information.
+  CALL,
   /// A wrapper node for TargetConstantPool,
   /// TargetExternalSymbol, and TargetGlobalAddress.
   WRAPPER,
+  LSL,     ///< Logical shift left.
+  LSR,     ///< Logical shift right.
+  ASR,     ///< Arithmetic shift right.
+  ROR,     ///< Bit rotate right.
+  ROL,     ///< Bit rotate left.
+  LSLLOOP, ///< A loop of single logical shift left instructions.
+  LSRLOOP, ///< A loop of single logical shift right instructions.
+  ROLLOOP, ///< A loop of single left bit rotate instructions.
+  RORLOOP, ///< A loop of single right bit rotate instructions.
+  ASRLOOP, ///< A loop of single arithmetic shift right instructions.
 };
 
 } // end of namespace M6502ISD
@@ -36,6 +49,7 @@ public:
   SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const override;
 
 private:
+  SDValue LowerShifts(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const;
 
   bool CanLowerReturn(CallingConv::ID CallConv,
@@ -52,6 +66,13 @@ private:
                                const SmallVectorImpl<ISD::InputArg> &Ins,
                                const SDLoc &dl, SelectionDAG &DAG,
                                SmallVectorImpl<SDValue> &InVals) const override;
+  SDValue LowerCall(TargetLowering::CallLoweringInfo &CLI,
+                    SmallVectorImpl<SDValue> &InVals) const override;
+  SDValue LowerCallResult(SDValue Chain, SDValue InFlag,
+                          CallingConv::ID CallConv, bool isVarArg,
+                          const SmallVectorImpl<ISD::InputArg> &Ins,
+                          const SDLoc &dl, SelectionDAG &DAG,
+                          SmallVectorImpl<SDValue> &InVals) const;
                       
 protected:
   const M6502Subtarget &Subtarget;

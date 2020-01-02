@@ -6,6 +6,9 @@ include "M6502InstrFormats.td"
 // M6502 Type Profiles
 //===----------------------------------------------------------------------===//
 
+def SDT_M6502CallSeqStart : SDCallSeqStart<[SDTCisVT<0, i16>, SDTCisVT<1, i16>]>;
+def SDT_M6502CallSeqEnd : SDCallSeqEnd<[SDTCisVT<0, i16>, SDTCisVT<1, i16>]>;
+def SDT_M6502Call : SDTypeProfile<0, -1, [SDTCisVT<0, iPTR>]>;
 def SDT_M6502Wrapper : SDTypeProfile<1, 1, [SDTCisSameAs<0, 1>, SDTCisPtrTy<0>]>;
 
 //===----------------------------------------------------------------------===//
@@ -15,7 +18,18 @@ def SDT_M6502Wrapper : SDTypeProfile<1, 1, [SDTCisSameAs<0, 1>, SDTCisPtrTy<0>]>
 def M6502return : SDNode<"M6502ISD::RETURN", SDTNone,
                          [SDNPHasChain, SDNPOptInGlue, SDNPVariadic]>;
 
+def M6502callseq_start : SDNode<"ISD::CALLSEQ_START", SDT_M6502CallSeqStart,
+                                [SDNPHasChain, SDNPOutGlue]>;
+def M6502callseq_end : SDNode<"ISD::CALLSEQ_END", SDT_M6502CallSeqEnd,
+                              [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue]>;
+                              
+def M6502call : SDNode<"M6502ISD::CALL", SDT_M6502Call,
+                       [SDNPHasChain, SDNPOutGlue, SDNPOptInGlue, SDNPVariadic]>;
+
 def M6502Wrapper : SDNode<"M6502ISD::WRAPPER", SDT_M6502Wrapper>;
+
+// Shift nodes.
+def M6502asl : SDNode<"M6502ISD::LSL", SDTIntUnaryOp>;
 
 //===----------------------------------------------------------------------===//
 // M6502 Operands, Complex Patterns and Transformations Definitions.
@@ -32,6 +46,8 @@ def memspi : Operand<iPTR>
 // Addressing mode pattern reg+imm6
 def addr : ComplexPattern<iPTR, 2, "SelectAddr", [], [SDNPWantRoot]>;
 
+def call_target : Operand<iPTR>;
+
 //===----------------------------------------------------------------------===//
 //===----------------------------------------------------------------------===//
 // M6502 Instruction list
@@ -41,6 +57,37 @@ def addr : ComplexPattern<iPTR, 2, "SelectAddr", [], [SDNPWantRoot]>;
 //===----------------------------------------------------------------------===//
 //===----------------------------------------------------------------------===//
 
+// ADJCALLSTACKDOWN/UP implicitly use/def SP because they may be expanded into
+// a stack adjustment and the codegen must know that they may modify the stack
+// pointer before prolog-epilog rewriting occurs.
+// Pessimistically assume ADJCALLSTACKDOWN / ADJCALLSTACKUP will become
+// sub / add which can clobber SREG.
+let Defs = [SP, SREG],
+Uses = [SP] in
+{
+  def ADJCALLSTACKDOWN : Pseudo<(outs),
+                                (ins i16imm:$amt, i16imm:$amt2),
+                                "#ADJCALLSTACKDOWN",
+                                [(M6502callseq_start timm:$amt, timm:$amt2)]>;
+
+  def ADJCALLSTACKUP : Pseudo<(outs),
+                              (ins i16imm:$amt1, i16imm:$amt2),
+                              "#ADJCALLSTACKUP",
+                              [(M6502callseq_end timm:$amt1, timm:$amt2)]>;
+}
+
+//===----------------------------------------------------------------------===//
+// Call instructions
+//===----------------------------------------------------------------------===//
+
+let isCall = 1 in
+{
+  let Uses = [SP] in
+  def CALLk : Pseudo<(outs),
+                     (ins call_target:$k),
+                     "_CALL\t$k",
+                     [(M6502call imm:$k)]>;
+}
 
 //===----------------------------------------------------------------------===//
 // Arithmetic instructions
@@ -53,25 +100,25 @@ multiclass ArithInst<string AsmName, SDPatternOperator Oper> {
     def imm : Pseudo<(outs GPR8:$dst),
                      (ins GPR8:$src, i8imm:$k),
                      AsmName # "imm\t$dst, $k",
-                     [(set i8:$dst, (Oper GPR8:$src, imm:$k))]>;
+                     [(set i8:$dst, (Oper GPR8:$src, imm:$k)), (implicit SREG)]>;
     
     // Immediate 16-bit
     def imm16 : Pseudo<(outs DREGS:$dst),
                        (ins DREGS:$src, i16imm:$k),
                        AsmName # "imm16\t$dst, $k",
-                       [(set i16:$dst, (Oper DREGS:$src, imm:$k))]>;
+                       [(set i16:$dst, (Oper DREGS:$src, imm:$k)), (implicit SREG)]>;
 
     // Register
     def reg : Pseudo<(outs GPR8:$dst),
                      (ins GPR8:$src, GPR8:$r),
                      AsmName # "reg\t$dst, $r",
-                     [(set i8:$dst, (Oper GPR8:$src, GPR8:$r))]>;
+                     [(set i8:$dst, (Oper GPR8:$src, GPR8:$r)), (implicit SREG)]>;
 
     // Register 16-bit
     def reg16 : Pseudo<(outs DREGS:$dst),
                        (ins DREGS:$src, DREGS:$r),
                        AsmName # "reg16\t$dst, $r",
-                       [(set i16:$dst, (Oper DREGS:$src, DREGS:$r))]>;
+                       [(set i16:$dst, (Oper DREGS:$src, DREGS:$r)), (implicit SREG)]>;
 
     // TODO: Absolute address, Indirect address, etc.
   }
@@ -97,6 +144,25 @@ let isCommutable = 1 in
 
 let isCommutable = 1 in
   defm ORA : ArithInst<"_ORA", or>;
+  
+//===----------------------------------------------------------------------===//
+// Bit and bit-test instructions
+//===----------------------------------------------------------------------===//
+
+// Bit shift/rotate operations.
+let Constraints = "$dst = $src",
+Defs = [SREG] in
+{
+  def ASLreg : Pseudo<(outs GPR8:$dst),
+                      (ins GPR8:$src),
+                      "_ASLreg\t$dst",
+                      [(set i8:$dst, (M6502asl i8:$src)), (implicit SREG)]>;
+                      
+  def ASLreg16 : Pseudo<(outs DREGS:$dst),
+                        (ins DREGS:$src),
+                        "_ASLreg16\t$dst",
+                        [(set i16:$dst, (M6502asl i16:$src)), (implicit SREG)]>;
+}
 
 //===----------------------------------------------------------------------===//
 // Return instructions.
@@ -119,10 +185,15 @@ isBarrier = 1 in
 // 8 and 16-bit register move instructions.
 let hasSideEffects = 0 in
 {
-  def Treg : Pseudo<(outs GPR8:$rd),
-                    (ins GPR8:$rr),
-                    "_Treg\t$rd, $rr",
+  def Treg : Pseudo<(outs GPR8:$dst),
+                    (ins GPR8:$src),
+                    "_Treg\t$dst, $src",
                     []>;
+
+  def Treg16 : Pseudo<(outs DREGS:$dst),
+                      (ins DREGS:$src),
+                      "_Treg16\t$dst, $src",
+                      []>;
 }
 
 // Load immediate values into registers.
@@ -252,6 +323,12 @@ def ZEXT : ExtensionPseudo<
 //===----------------------------------------------------------------------===//
 // Non-Instruction Patterns
 //===----------------------------------------------------------------------===//
+
+// Calls.
+def : Pat<(M6502call (i16 tglobaladdr:$dst)),
+          (CALLk tglobaladdr:$dst)>;
+def : Pat<(M6502call (i16 texternalsym:$dst)),
+          (CALLk texternalsym:$dst)>;
 
 // `anyext`
 def : Pat<(i16 (anyext i8:$src)),

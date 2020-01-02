@@ -18,8 +18,13 @@ M6502RegisterInfo::M6502RegisterInfo() : M6502GenRegisterInfo(0) {}
 
 const uint16_t *
 M6502RegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
-  static const MCPhysReg CalleeSavedRegs[] = { 0 }; // TODO
-  return CalleeSavedRegs;
+  return CSR_Normal_SaveList;
+}
+
+const uint32_t *
+M6502RegisterInfo::getCallPreservedMask(const MachineFunction &MF,
+                                        CallingConv::ID CC) const {
+  return CSR_Normal_RegMask;
 }
 
 BitVector M6502RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
@@ -31,6 +36,21 @@ BitVector M6502RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   Reserved.set(M6502::SP);
 
   return Reserved;
+}
+
+const TargetRegisterClass *
+M6502RegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC,
+                                             const MachineFunction &MF) const {
+  const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();
+  if (TRI->isTypeLegalForClass(*RC, MVT::i16)) {
+    return &M6502::DREGSRegClass;
+  }
+
+  if (TRI->isTypeLegalForClass(*RC, MVT::i8)) {
+    return &M6502::GPR8RegClass;
+  }
+
+  llvm_unreachable("Invalid register size");
 }
 
 void M6502RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,

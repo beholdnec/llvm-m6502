@@ -17,3 +17,9 @@ def RetCC_M6502 : CallingConv<[
 def CC_M6502 : CallingConv<[
   CCAssignToStack<1, 1>
 ]>;
+
+//===----------------------------------------------------------------------===//
+// Callee-saved register lists.
+//===----------------------------------------------------------------------===//
+
+def CSR_Normal : CalleeSavedRegs<(add)>;

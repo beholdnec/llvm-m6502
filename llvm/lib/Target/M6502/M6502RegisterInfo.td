@@ -63,3 +63,10 @@ def DREGS : RegisterClass<"M6502", [i16], 8,
   
 // Register class used for the stack read pseudo instruction.
 def GPRSP: RegisterClass<"M6502", [i16], 8, (add SP)>;
+
+// Status register. Includes ZF, NF, VF and CF.
+def SREG : M6502Reg<"FLAGS">;
+def CCR : RegisterClass<"M6502", [i8], 8, (add SREG)>
+{
+  let CopyCost = -1;      // Don't allow copying of status registers
+}

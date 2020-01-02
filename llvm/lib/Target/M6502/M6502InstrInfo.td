@@ -33,22 +33,67 @@ def addr : ComplexPattern<iPTR, 2, "SelectAddr", [], [SDNPWantRoot]>;
 //===----------------------------------------------------------------------===//
 //===----------------------------------------------------------------------===//
 
+
 //===----------------------------------------------------------------------===//
-// Addition
+// Arithmetic instructions
 //===----------------------------------------------------------------------===//
 
-let isCommutable = 1,
-Constraints = "$dst = $src1" in
-{
-  def ADDreg16 : Pseudo<(outs DREGS:$dst),
-                        (ins DREGS:$src1, DREGS:$src2),
-                        "_ADDreg16\t$dst, $src2",
-                        [(set i16:$dst, (add i16:$src1, i16:$src2))]>;
+multiclass ArithInst<string AsmName, SDPatternOperator Oper> {
+  let Constraints = "$dst = $src" in
+  {
+    // Immediate
+    def imm : Pseudo<(outs GPR8:$dst),
+                     (ins GPR8:$src, i8imm:$k),
+                     AsmName # "imm\t$dst, $k",
+                     [(set i8:$dst, (Oper GPR8:$src, imm:$k))]>;
+    
+    // Immediate 16-bit
+    def imm16 : Pseudo<(outs DREGS:$dst),
+                       (ins DREGS:$src, i16imm:$k),
+                       AsmName # "imm16\t$dst, $k",
+                       [(set i16:$dst, (Oper DREGS:$src, imm:$k))]>;
+
+    // Register
+    def reg : Pseudo<(outs GPR8:$dst),
+                     (ins GPR8:$src, GPR8:$r),
+                     AsmName # "reg\t$dst, $r",
+                     [(set i8:$dst, (Oper GPR8:$src, GPR8:$r))]>;
+
+    // Register 16-bit
+    def reg16 : Pseudo<(outs DREGS:$dst),
+                       (ins DREGS:$src, DREGS:$r),
+                       AsmName # "reg16\t$dst, $r",
+                       [(set i16:$dst, (Oper DREGS:$src, DREGS:$r))]>;
+
+    // TODO: Absolute address, Indirect address, etc.
+  }
 }
+
+let isCommutable = 1, Defs = [SREG] in
+  defm AD0 : ArithInst<"_AD0", addc>; // FIXME: implicit SREG?
+
+let isCommutable = 1, Defs = [SREG], Uses = [SREG] in
+  defm ADC : ArithInst<"_ADC", adde>; // FIXME: implicit SREG?
+
+let Defs = [SREG] in
+  defm SB1 : ArithInst<"_SB1", subc>; // FIXME: implicit SREG?
+
+let Defs = [SREG], Uses = [SREG] in
+  defm SBC : ArithInst<"_SBC", sube>; // FIXME: implicit SREG?
+
+let isCommutable = 1 in
+  defm AND : ArithInst<"_AND", and>;
+
+let isCommutable = 1 in
+  defm EOR : ArithInst<"_EOR", xor>;
+
+let isCommutable = 1 in
+  defm ORA : ArithInst<"_ORA", or>;
 
 //===----------------------------------------------------------------------===//
 // Return instructions.
 //===----------------------------------------------------------------------===//
+
 let isTerminator = 1,
 isReturn = 1,
 isBarrier = 1 in 
@@ -134,6 +179,12 @@ def ZEXT : ExtensionPseudo<
 // Non-Instruction Patterns
 //===----------------------------------------------------------------------===//
 
-// the add instruction always writes the carry flag
-def : Pat<(addc DREGS:$src, DREGS:$src2),
-          (ADDreg16 DREGS:$src, DREGS:$src2)>;
+// the add instruction always reads and writes the carry flag. The carry flag
+// must be explicitly cleared.
+// def : Pat<(addc DREGS:$src, DREGS:$src2),
+//           (AD0reg16 DREGS:$src, DREGS:$src2)>;
+          
+// all sub instruction variants always writes the carry flag. The carry flag
+// must be explicitly set.
+// def : Pat<(subc DREGS:$src, DREGS:$src2),
+//           (SB1reg16 DREGS:$src, DREGS:$src2)>;

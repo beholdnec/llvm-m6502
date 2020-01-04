@@ -15,7 +15,30 @@
 namespace llvm {
   
 M6502InstrInfo::M6502InstrInfo()
-    : M6502GenInstrInfo(/*M6502::ADJCALLSTACKDOWN, M6502::ADJCALLSTACKUP*/), RI() {}
+    : M6502GenInstrInfo(M6502::ADJCALLSTACKDOWN, M6502::ADJCALLSTACKUP), RI() {}
+
+void M6502InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
+                                 MachineBasicBlock::iterator MI,
+                                 const DebugLoc &DL, unsigned DestReg,
+                                 unsigned SrcReg, bool KillSrc) const {
+  const M6502Subtarget &STI = MBB.getParent()->getSubtarget<M6502Subtarget>();
+  const M6502RegisterInfo &TRI = *STI.getRegisterInfo();
+  unsigned Opc;
+
+  if (M6502::DREGSRegClass.contains(DestReg, SrcReg)) {
+    BuildMI(MBB, MI, DL, get(M6502::Treg16), DestReg)
+        .addReg(SrcReg, getKillRegState(KillSrc));
+  } else {
+    if (M6502::GPR8RegClass.contains(DestReg, SrcReg)) {
+      Opc = M6502::Treg;
+    } else {
+      llvm_unreachable("Impossible reg-to-reg copy");
+    }
+
+    BuildMI(MBB, MI, DL, get(Opc), DestReg)
+        .addReg(SrcReg, getKillRegState(KillSrc));
+  }
+}
 
 void M6502InstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
                                          MachineBasicBlock::iterator MI,

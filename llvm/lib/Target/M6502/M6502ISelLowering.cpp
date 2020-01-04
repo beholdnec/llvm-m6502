@@ -21,8 +21,10 @@ M6502TargetLowering::M6502TargetLowering(const M6502TargetMachine &TM,
   computeRegisterProperties(Subtarget.getRegisterInfo());
   
   setSchedulingPreference(Sched::RegPressure);
+  //setStackPointerRegisterToSaveRestore(M6502::SP);
   
   setOperationAction(ISD::GlobalAddress, MVT::i16, Custom);
+  setOperationAction(ISD::BlockAddress, MVT::i16, Custom);
   
   for (MVT VT : MVT::integer_valuetypes()) {
     for (auto N : {ISD::EXTLOAD, ISD::SEXTLOAD, ISD::ZEXTLOAD}) {
@@ -58,6 +60,8 @@ M6502TargetLowering::M6502TargetLowering(const M6502TargetMachine &TM,
   setOperationAction(ISD::BR_CC, MVT::i64, Custom);
   setOperationAction(ISD::BRCOND, MVT::Other, Expand);
   
+  setOperationAction(ISD::BR_JT, MVT::Other, Expand);
+  
   setOperationAction(ISD::MUL, MVT::i8, Expand);
   setOperationAction(ISD::MUL, MVT::i16, Expand);
   
@@ -73,6 +77,9 @@ M6502TargetLowering::M6502TargetLowering(const M6502TargetMachine &TM,
   }
   
   setMinFunctionAlignment(1);
+  // This line effectively disables jump tables.
+  // TODO: support jump tables in some form.
+  setMinimumJumpTableEntries(UINT_MAX);
 }
 
 const char *M6502TargetLowering::getTargetNodeName(unsigned Opcode) const {
@@ -97,7 +104,7 @@ const char *M6502TargetLowering::getTargetNodeName(unsigned Opcode) const {
     NODE(BRCOND);
     NODE(CMP);
     NODE(CMPC);
-    NODE(TST);
+    // NODE(TST);
     NODE(SELECT_CC);
 #undef NODE
   }
@@ -178,6 +185,16 @@ SDValue M6502TargetLowering::LowerGlobalAddress(SDValue Op,
   return DAG.getNode(M6502ISD::WRAPPER, SDLoc(Op), getPointerTy(DL), Result);
 }
 
+SDValue M6502TargetLowering::LowerBlockAddress(SDValue Op,
+                                               SelectionDAG &DAG) const {
+  auto DL = DAG.getDataLayout();
+  const BlockAddress *BA = cast<BlockAddressSDNode>(Op)->getBlockAddress();
+
+  SDValue Result = DAG.getTargetBlockAddress(BA, getPointerTy(DL));
+
+  return DAG.getNode(M6502ISD::WRAPPER, SDLoc(Op), getPointerTy(DL), Result);
+}
+
 /// IntCCToM6502CC - Convert a DAG integer condition code to an M6502 CC.
 static M6502CC::CondCodes intCCToM6502CC(ISD::CondCode CC) {
   switch (CC) {
@@ -205,7 +222,6 @@ SDValue M6502TargetLowering::getM6502Cmp(SDValue LHS, SDValue RHS, ISD::CondCode
                                          SDLoc DL) const {
   SDValue Cmp;
   EVT VT = LHS.getValueType();
-  bool UseTest = false;
 
   switch (CC) {
   default:
@@ -219,13 +235,13 @@ SDValue M6502TargetLowering::getM6502Cmp(SDValue LHS, SDValue RHS, ISD::CondCode
   case ISD::SETGT: {
     if (const ConstantSDNode *C = dyn_cast<ConstantSDNode>(RHS)) {
       switch (C->getSExtValue()) {
-      case -1: {
-        // When doing lhs > -1 use a tst instruction on the top part of lhs
-        // and use brpl instead of using a chain of cp/cpc.
-        UseTest = true;
-        M6502cc = DAG.getConstant(M6502CC::COND_PL, DL, MVT::i8);
-        break;
-      }
+      // case -1: {
+      //   // When doing lhs > -1 use a tst instruction on the top part of lhs
+      //   // and use brpl instead of using a chain of cp/cpc.
+      //   UseTest = true;
+      //   M6502cc = DAG.getConstant(M6502CC::COND_PL, DL, MVT::i8);
+      //   break;
+      // }
       case 0: {
         // Turn lhs > 0 into 0 < lhs since 0 can be materialized with
         // __zero_reg__ in lhs.
@@ -260,13 +276,13 @@ SDValue M6502TargetLowering::getM6502Cmp(SDValue LHS, SDValue RHS, ISD::CondCode
         CC = ISD::SETGE;
         break;
       }
-      case 0: {
-        // When doing lhs < 0 use a tst instruction on the top part of lhs
-        // and use brmi instead of using a chain of cp/cpc.
-        UseTest = true;
-        M6502cc = DAG.getConstant(M6502CC::COND_MI, DL, MVT::i8);
-        break;
-      }
+      // case 0: {
+      //   // When doing lhs < 0 use a tst instruction on the top part of lhs
+      //   // and use brmi instead of using a chain of cp/cpc.
+      //   UseTest = true;
+      //   M6502cc = DAG.getConstant(M6502CC::COND_MI, DL, MVT::i8);
+      //   break;
+      // }
       }
     }
     break;
@@ -304,15 +320,15 @@ SDValue M6502TargetLowering::getM6502Cmp(SDValue LHS, SDValue RHS, ISD::CondCode
     SDValue RHShi = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, RHS,
                                 DAG.getIntPtrConstant(1, DL));
 
-    if (UseTest) {
-      // When using tst we only care about the highest part.
-      SDValue Top = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i8, LHShi,
-                                DAG.getIntPtrConstant(1, DL));
-      Cmp = DAG.getNode(M6502ISD::TST, DL, MVT::Glue, Top);
-    } else {
+    // if (UseTest) {
+    //   // When using tst we only care about the highest part.
+    //   SDValue Top = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i8, LHShi,
+    //                             DAG.getIntPtrConstant(1, DL));
+    //   Cmp = DAG.getNode(M6502ISD::TST, DL, MVT::Glue, Top);
+    // } else {
       Cmp = DAG.getNode(M6502ISD::CMP, DL, MVT::Glue, LHSlo, RHSlo);
       Cmp = DAG.getNode(M6502ISD::CMPC, DL, MVT::Glue, LHShi, RHShi, Cmp);
-    }
+    // }
   } else if (VT == MVT::i64) {
     SDValue LHS_0 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i32, LHS,
                                 DAG.getIntPtrConstant(0, DL));
@@ -342,36 +358,36 @@ SDValue M6502TargetLowering::getM6502Cmp(SDValue LHS, SDValue RHS, ISD::CondCode
     SDValue RHS3 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, RHS_1,
                                DAG.getIntPtrConstant(1, DL));
 
-    if (UseTest) {
-      // When using tst we only care about the highest part.
-      SDValue Top = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i8, LHS3,
-                                DAG.getIntPtrConstant(1, DL));
-      Cmp = DAG.getNode(M6502ISD::TST, DL, MVT::Glue, Top);
-    } else {
+    // if (UseTest) {
+    //   // When using tst we only care about the highest part.
+    //   SDValue Top = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i8, LHS3,
+    //                             DAG.getIntPtrConstant(1, DL));
+    //   Cmp = DAG.getNode(M6502ISD::TST, DL, MVT::Glue, Top);
+    // } else {
       Cmp = DAG.getNode(M6502ISD::CMP, DL, MVT::Glue, LHS0, RHS0);
       Cmp = DAG.getNode(M6502ISD::CMPC, DL, MVT::Glue, LHS1, RHS1, Cmp);
       Cmp = DAG.getNode(M6502ISD::CMPC, DL, MVT::Glue, LHS2, RHS2, Cmp);
       Cmp = DAG.getNode(M6502ISD::CMPC, DL, MVT::Glue, LHS3, RHS3, Cmp);
-    }
+    // }
   } else if (VT == MVT::i8 || VT == MVT::i16) {
-    if (UseTest) {
-      // When using tst we only care about the highest part.
-      Cmp = DAG.getNode(M6502ISD::TST, DL, MVT::Glue,
-                        (VT == MVT::i8)
-                            ? LHS
-                            : DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i8,
-                                          LHS, DAG.getIntPtrConstant(1, DL)));
-    } else {
+    // if (UseTest) {
+    //   // When using tst we only care about the highest part.
+    //   Cmp = DAG.getNode(M6502ISD::TST, DL, MVT::Glue,
+    //                     (VT == MVT::i8)
+    //                         ? LHS
+    //                         : DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i8,
+    //                                       LHS, DAG.getIntPtrConstant(1, DL)));
+    // } else {
       Cmp = DAG.getNode(M6502ISD::CMP, DL, MVT::Glue, LHS, RHS);
-    }
+    // }
   } else {
     llvm_unreachable("Invalid comparison size");
   }
 
   // When using a test instruction M6502cc is already set.
-  if (!UseTest) {
+  // if (!UseTest) {
     M6502cc = DAG.getConstant(intCCToM6502CC(CC), DL, MVT::i8);
-  }
+  // }
 
   return Cmp;
 }
@@ -403,6 +419,8 @@ SDValue M6502TargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const
     return LowerShifts(Op, DAG);
   case ISD::GlobalAddress:
     return LowerGlobalAddress(Op, DAG);
+  case ISD::BlockAddress:
+    return LowerBlockAddress(Op, DAG);
   case ISD::BR_CC:
     return LowerBR_CC(Op, DAG);
   }
@@ -539,6 +557,7 @@ SDValue M6502TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   bool isVarArg = CLI.IsVarArg;
 
   MachineFunction &MF = DAG.getMachineFunction();
+  MachineFrameInfo &MFI = MF.getFrameInfo();
 
   // AVR does not yet support tail call optimization.
   isTailCall = false;
@@ -582,13 +601,23 @@ SDValue M6502TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
     if (VA.isMemLoc()) {
       // SP points to one stack slot further so add one to adjust it.
       // FIXME: This causes an assertion in TwoAddressInstructionPass...
-      SDValue PtrOff = DAG.getNode(
-          ISD::ADD, DL, getPointerTy(DAG.getDataLayout()),
-          DAG.getRegister(M6502::SP, getPointerTy(DAG.getDataLayout())),
-          DAG.getIntPtrConstant(VA.getLocMemOffset() + 1, DL));
+      // SDValue PtrOff = DAG.getNode(
+      //     ISD::ADD, DL, getPointerTy(DAG.getDataLayout()),
+      //     //DAG.getRegister(M6502::SP, getPointerTy(DAG.getDataLayout())),
+      //     DAG.getIntPtrConstant(0, DL), // XXX: for debugging
+      //     DAG.getIntPtrConstant(VA.getLocMemOffset() + 1, DL));
 
+      EVT LocVT = VA.getLocVT();
+
+      // Create the frame index object for this outgoing parameter.
+      // FIXME: this is borked -- we can't just create a stack object in our frame
+      // to pass arguments in another frame.
+      int FI = MFI.CreateFixedObject(LocVT.getSizeInBits() / 8,
+                                     VA.getLocMemOffset(), true);
+
+      SDValue FIN = DAG.getFrameIndex(FI, getPointerTy(DAG.getDataLayout()));
       SDValue MemOp =
-          DAG.getStore(Chain, DL, Arg, PtrOff,
+          DAG.getStore(Chain, DL, Arg, FIN,
                         MachinePointerInfo::getStack(MF, VA.getLocMemOffset()),
                         0);
       ArgChains.push_back(MemOp);

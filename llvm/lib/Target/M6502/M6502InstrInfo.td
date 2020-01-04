@@ -36,17 +36,17 @@ def M6502brcond : SDNode<"M6502ISD::BRCOND", SDT_M6502Brcond,
 def M6502cmp : SDNode<"M6502ISD::CMP", SDT_M6502Cmp, [SDNPOutGlue]>;
 
 // Shift nodes.
-def M6502asl : SDNode<"M6502ISD::LSL", SDTIntUnaryOp>;
+def M6502lsl : SDNode<"M6502ISD::LSL", SDTIntUnaryOp>;
+def M6502lsr : SDNode<"M6502ISD::LSR", SDTIntUnaryOp>;
+def M6502asr : SDNode<"M6502ISD::ASR", SDTIntUnaryOp>;
 
 //===----------------------------------------------------------------------===//
 // M6502 Operands, Complex Patterns and Transformations Definitions.
 //===----------------------------------------------------------------------===//
 
-// FIXME: M6502 doesn't work this way. We might need a different solution...
-// Address operand for `SP+imm` used by STD{W}SPQRr
-def memspi : Operand<iPTR>
+def frmidx : Operand<iPTR>
 {
-  let MIOperandInfo = (ops GPRSP, i16imm);
+  let MIOperandInfo = (ops tframeindex, i16imm);
 }
 
 // FIXME: M6502 doesn't work this way.
@@ -81,8 +81,9 @@ def M6502_COND_PL : PatLeaf<(i8 7)>;
 // pointer before prolog-epilog rewriting occurs.
 // Pessimistically assume ADJCALLSTACKDOWN / ADJCALLSTACKUP will become
 // sub / add which can clobber SREG.
-let Defs = [SP, SREG],
-Uses = [SP] in
+//let Defs = [SP, SREG],
+//Uses = [SP] in
+let Defs = [SREG] in
 {
   def ADJCALLSTACKDOWN : Pseudo<(outs),
                                 (ins i16imm:$amt, i16imm:$amt2),
@@ -101,7 +102,7 @@ Uses = [SP] in
 
 let isCall = 1 in
 {
-  let Uses = [SP] in
+  //let Uses = [SP] in
   def CALLk : Pseudo<(outs),
                      (ins call_target:$k),
                      "_CALL\t$k",
@@ -116,6 +117,12 @@ let isBarrier = 1,
 isBranch = 1,
 isTerminator = 1 in
 {
+  let isIndirectBranch = 1 in
+  def IJMP : Pseudo<(outs),
+                    (ins DREGS:$target),
+                    "_IJMP\t$target",
+                    [(brind i16:$target)]>;
+
   def JMPk : Pseudo<(outs),
                     (ins brtarget:$k),
                     "_JMP\t$k",
@@ -189,12 +196,27 @@ Defs = [SREG] in
   def ASLreg : Pseudo<(outs GPR8:$dst),
                       (ins GPR8:$src),
                       "_ASLreg\t$dst",
-                      [(set i8:$dst, (M6502asl i8:$src)), (implicit SREG)]>;
+                      [(set i8:$dst, (M6502lsl i8:$src)), (implicit SREG)]>;
                       
   def ASLreg16 : Pseudo<(outs DREGS:$dst),
                         (ins DREGS:$src),
                         "_ASLreg16\t$dst",
-                        [(set i16:$dst, (M6502asl i16:$src)), (implicit SREG)]>;
+                        [(set i16:$dst, (M6502lsl i16:$src)), (implicit SREG)]>;
+
+  def LSRreg : Pseudo<(outs GPR8:$dst),
+                      (ins GPR8:$src),
+                      "_LSRreg\t$dst",
+                      [(set i8:$dst, (M6502lsr i8:$src)), (implicit SREG)]>;
+                      
+  def LSRreg16 : Pseudo<(outs DREGS:$dst),
+                      (ins DREGS:$src),
+                      "_LSRreg16\t$dst",
+                      [(set i16:$dst, (M6502lsr i16:$src)), (implicit SREG)]>;
+
+  def ASRreg16 : Pseudo<(outs DREGS:$dst),
+                        (ins DREGS:$src),
+                        "_ASRreg16\t$dst",
+                        [(set i16:$dst, (M6502asr i16:$src)), (implicit SREG)]>;
 }
 
 //===----------------------------------------------------------------------===//
@@ -314,14 +336,14 @@ let isReMaterializable = 1 in
 // Load register from the stack.
 def LDstk : LoadPseudo<
   (outs GPR8:$dst),
-  (ins memspi:$src),
+  (ins frmidx:$src),
   "_LDstk\t$dst, $src",
   [(set i8:$dst, (load addr:$src))]
 >;
 
 def LDstk16 : LoadPseudo<
   (outs DREGS:$dst),
-  (ins memspi:$src),
+  (ins frmidx:$src),
   "_LDstk16\t$dst, $src",
   [(set i16:$dst, (load addr:$src))]
 >;
@@ -329,14 +351,14 @@ def LDstk16 : LoadPseudo<
 // Store register to the stack.
 def STstk : StorePseudo<
   (outs),
-  (ins memspi:$dst, GPR8:$src),
+  (ins frmidx:$dst, GPR8:$src),
   "_STstk\t$dst, $src",
   [(store i8:$src, addr:$dst)]
 >;
 
 def STstk16 : StorePseudo<
   (outs),
-  (ins memspi:$dst, DREGS:$src),
+  (ins frmidx:$dst, DREGS:$src),
   "_STstk16\t$dst, $src",
   [(store i16:$src, addr:$dst)]
 >;

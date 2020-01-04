@@ -41,7 +41,7 @@ enum NodeType {
   /// Compare with carry instruction.
   CMPC,
   /// Test for zero or minus instruction.
-  TST,
+  // TST,
   /// Operand 0 and operand 1 are selection variable, operand 2
   /// is condition code and operand 3 is flag operand.
   SELECT_CC
@@ -67,6 +67,7 @@ private:
                       SelectionDAG &DAG, SDLoc dl) const;
   SDValue LowerShifts(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerBlockAddress(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerBR_CC(SDValue Op, SelectionDAG &DAG) const;
 
   bool CanLowerReturn(CallingConv::ID CallConv,

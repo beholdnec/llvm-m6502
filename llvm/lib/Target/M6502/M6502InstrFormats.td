@@ -43,5 +43,5 @@ class StorePseudo<dag outs, dag ins, string asmstr, list<dag> pattern>
 class ExtensionPseudo<dag outs, dag ins, string asmstr, list<dag> pattern>
   : Pseudo<outs, ins, asmstr, pattern>
 {
-  //let Defs = [SREG];
+  let Defs = [SREG];
 }

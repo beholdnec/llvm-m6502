@@ -134,31 +134,32 @@ isTerminator = 1 in
 //===----------------------------------------------------------------------===//
 
 multiclass ArithInst<string AsmName, SDPatternOperator Oper> {
-  let Constraints = "$dst = $src" in
+  let Constraints = "$dst = $src",
+  Defs = [SREG] in
   {
     // Immediate
     def imm : Pseudo<(outs GPR8:$dst),
                      (ins GPR8:$src, i8imm:$k),
                      AsmName # "imm\t$dst, $k",
-                     [(set i8:$dst, (Oper GPR8:$src, imm:$k))]>;
+                     [(set i8:$dst, (Oper GPR8:$src, imm:$k)), (implicit SREG)]>;
     
     // Immediate 16-bit
     def imm16 : Pseudo<(outs DREGS:$dst),
                        (ins DREGS:$src, i16imm:$k),
                        AsmName # "imm16\t$dst, $k",
-                       [(set i16:$dst, (Oper DREGS:$src, imm:$k))]>;
+                       [(set i16:$dst, (Oper DREGS:$src, imm:$k)), (implicit SREG)]>;
 
     // Register
     def reg : Pseudo<(outs GPR8:$dst),
                      (ins GPR8:$src, GPR8:$r),
                      AsmName # "reg\t$dst, $r",
-                     [(set i8:$dst, (Oper GPR8:$src, GPR8:$r))]>;
+                     [(set i8:$dst, (Oper GPR8:$src, GPR8:$r)), (implicit SREG)]>;
 
     // Register 16-bit
     def reg16 : Pseudo<(outs DREGS:$dst),
                        (ins DREGS:$src, DREGS:$r),
                        AsmName # "reg16\t$dst, $r",
-                       [(set i16:$dst, (Oper DREGS:$src, DREGS:$r))]>;
+                       [(set i16:$dst, (Oper DREGS:$src, DREGS:$r)), (implicit SREG)]>;
 
     // TODO: Absolute address, Indirect address, etc.
   }
@@ -433,14 +434,14 @@ def SEXT : ExtensionPseudo<
   (outs DREGS:$dst),
   (ins GPR8:$src),
   "_SEXT\t$dst, $src",
-  [(set i16:$dst, (sext i8:$src))]
+  [(set i16:$dst, (sext i8:$src)), (implicit SREG)]
 >;
 
 def ZEXT : ExtensionPseudo<
   (outs DREGS:$dst),
   (ins GPR8:$src),
   "_ZEXT\t$dst, $src",
-  [(set i16:$dst, (zext i8:$src))]
+  [(set i16:$dst, (zext i8:$src)), (implicit SREG)]
 >;
 
 //===----------------------------------------------------------------------===//

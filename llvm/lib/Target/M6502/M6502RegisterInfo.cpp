@@ -31,9 +31,9 @@ BitVector M6502RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   BitVector Reserved(getNumRegs());
 
   //  Reserve the stack pointer.
-  // Reserved.set(M6502::SPL);
-  // Reserved.set(M6502::SPH);
-  // Reserved.set(M6502::SP);
+  Reserved.set(M6502::SPL);
+  Reserved.set(M6502::SPH);
+  Reserved.set(M6502::SP);
 
   return Reserved;
 }
@@ -69,9 +69,7 @@ void M6502RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
 }
 
 Register M6502RegisterInfo::getFrameRegister(const MachineFunction &MF) const {
-  //return M6502::SP;
-  // TODO
-  return M6502::NoRegister;
+  return M6502::SP;
 }
 
 } // end of namespace llvm

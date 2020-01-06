@@ -44,9 +44,10 @@ def M6502asr : SDNode<"M6502ISD::ASR", SDTIntUnaryOp>;
 // M6502 Operands, Complex Patterns and Transformations Definitions.
 //===----------------------------------------------------------------------===//
 
-def frmidx : Operand<iPTR>
+// Address operand for `SP+imm` used by LDstk and STstk
+def memspi : Operand<iPTR>
 {
-  let MIOperandInfo = (ops tframeindex, i16imm);
+  let MIOperandInfo = (ops GPRSP, i16imm);
 }
 
 // FIXME: M6502 doesn't work this way.
@@ -81,9 +82,8 @@ def M6502_COND_PL : PatLeaf<(i8 7)>;
 // pointer before prolog-epilog rewriting occurs.
 // Pessimistically assume ADJCALLSTACKDOWN / ADJCALLSTACKUP will become
 // sub / add which can clobber SREG.
-//let Defs = [SP, SREG],
-//Uses = [SP] in
-let Defs = [SREG] in
+let Defs = [SP, SREG],
+Uses = [SP] in
 {
   def ADJCALLSTACKDOWN : Pseudo<(outs),
                                 (ins i16imm:$amt, i16imm:$amt2),
@@ -102,7 +102,7 @@ let Defs = [SREG] in
 
 let isCall = 1 in
 {
-  //let Uses = [SP] in
+  let Uses = [SP] in
   def CALLk : Pseudo<(outs),
                      (ins call_target:$k),
                      "_CALL\t$k",
@@ -336,14 +336,14 @@ let isReMaterializable = 1 in
 // Load register from the stack.
 def LDstk : LoadPseudo<
   (outs GPR8:$dst),
-  (ins frmidx:$src),
+  (ins memspi:$src),
   "_LDstk\t$dst, $src",
   [(set i8:$dst, (load addr:$src))]
 >;
 
 def LDstk16 : LoadPseudo<
   (outs DREGS:$dst),
-  (ins frmidx:$src),
+  (ins memspi:$src),
   "_LDstk16\t$dst, $src",
   [(set i16:$dst, (load addr:$src))]
 >;
@@ -351,14 +351,14 @@ def LDstk16 : LoadPseudo<
 // Store register to the stack.
 def STstk : StorePseudo<
   (outs),
-  (ins frmidx:$dst, GPR8:$src),
+  (ins memspi:$dst, GPR8:$src),
   "_STstk\t$dst, $src",
   [(store i8:$src, addr:$dst)]
 >;
 
 def STstk16 : StorePseudo<
   (outs),
-  (ins frmidx:$dst, DREGS:$src),
+  (ins memspi:$dst, DREGS:$src),
   "_STstk16\t$dst, $src",
   [(store i16:$src, addr:$dst)]
 >;

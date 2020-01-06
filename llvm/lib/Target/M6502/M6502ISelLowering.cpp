@@ -21,7 +21,7 @@ M6502TargetLowering::M6502TargetLowering(const M6502TargetMachine &TM,
   computeRegisterProperties(Subtarget.getRegisterInfo());
   
   setSchedulingPreference(Sched::RegPressure);
-  //setStackPointerRegisterToSaveRestore(M6502::SP);
+  setStackPointerRegisterToSaveRestore(M6502::SP);
   
   setOperationAction(ISD::GlobalAddress, MVT::i16, Custom);
   setOperationAction(ISD::BlockAddress, MVT::i16, Custom);
@@ -601,25 +601,17 @@ SDValue M6502TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
     if (VA.isMemLoc()) {
       // SP points to one stack slot further so add one to adjust it.
       // FIXME: This causes an assertion in TwoAddressInstructionPass...
-      // SDValue PtrOff = DAG.getNode(
-      //     ISD::ADD, DL, getPointerTy(DAG.getDataLayout()),
-      //     //DAG.getRegister(M6502::SP, getPointerTy(DAG.getDataLayout())),
-      //     DAG.getIntPtrConstant(0, DL), // XXX: for debugging
-      //     DAG.getIntPtrConstant(VA.getLocMemOffset() + 1, DL));
+      SDValue OldSP = DAG.getCopyFromReg(Chain, DL, M6502::SP, getPointerTy(DAG.getDataLayout()));
+      SDValue PtrOff = DAG.getNode(
+          ISD::ADD, DL, getPointerTy(DAG.getDataLayout()),
+          OldSP,
+          //DAG.getRegister(M6502::SP, getPointerTy(DAG.getDataLayout())),
+          DAG.getIntPtrConstant(VA.getLocMemOffset() + 1, DL));
 
-      EVT LocVT = VA.getLocVT();
-
-      // Create the frame index object for this outgoing parameter.
-      // FIXME: this is borked -- we can't just create a stack object in our frame
-      // to pass arguments in another frame.
-      int FI = MFI.CreateFixedObject(LocVT.getSizeInBits() / 8,
-                                     VA.getLocMemOffset(), true);
-
-      SDValue FIN = DAG.getFrameIndex(FI, getPointerTy(DAG.getDataLayout()));
       SDValue MemOp =
-          DAG.getStore(Chain, DL, Arg, FIN,
-                        MachinePointerInfo::getStack(MF, VA.getLocMemOffset()),
-                        0);
+          DAG.getStore(Chain, DL, Arg, PtrOff,
+                       MachinePointerInfo::getStack(MF, VA.getLocMemOffset()),
+                       0);
       ArgChains.push_back(MemOp);
     } else {
       llvm_unreachable("Argument must be located in memory");
@@ -654,7 +646,7 @@ SDValue M6502TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
     InFlag = Chain.getValue(1);
   }
 
-  // Handle result values, copying them out of physregs into vregs that we
+  // Handle result values, copying them out of stack locations into vregs that we
   // return.
   return LowerCallResult(Chain, InFlag, CallConv, isVarArg, Ins, DL, DAG,
                          InVals);

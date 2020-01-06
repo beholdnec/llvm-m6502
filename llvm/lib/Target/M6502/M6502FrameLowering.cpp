@@ -22,4 +22,11 @@ bool M6502FrameLowering::hasFP(const MachineFunction &MF) const {
   return false;
 }
 
+MachineBasicBlock::iterator M6502FrameLowering::eliminateCallFramePseudoInstr(
+    MachineFunction &MF, MachineBasicBlock &MBB,
+    MachineBasicBlock::iterator MI) const {
+  // TODO
+  return MI;
+}
+
 } // end of namespace llvm

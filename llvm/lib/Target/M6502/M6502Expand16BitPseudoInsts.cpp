@@ -146,6 +146,50 @@ bool M6502Expand16BitPseudo::expand<M6502::LDimm16>(Block &MBB, BlockIt MBBI) {
 }
 
 template <>
+bool M6502Expand16BitPseudo::expand<M6502::LDabs16>(Block &MBB, BlockIt MBBI) {
+  MachineInstr &MI = *MBBI;
+  unsigned OpLo, OpHi, DstLoReg, DstHiReg;
+  unsigned DstReg = MI.getOperand(0).getReg();
+  bool DstIsDead = MI.getOperand(0).isDead();
+  OpLo = M6502::LDabs;
+  OpHi = M6502::LDabs;
+  TRI->splitReg(DstReg, DstLoReg, DstHiReg);
+
+  auto MIBLO = buildMI(MBB, MBBI, OpLo)
+    .addReg(DstLoReg, RegState::Define | getDeadRegState(DstIsDead));
+
+  auto MIBHI = buildMI(MBB, MBBI, OpHi)
+    .addReg(DstHiReg, RegState::Define | getDeadRegState(DstIsDead));
+
+  switch (MI.getOperand(1).getType()) {
+  case MachineOperand::MO_GlobalAddress: {
+    const GlobalValue *GV = MI.getOperand(1).getGlobal();
+    int64_t Offs = MI.getOperand(1).getOffset();
+    unsigned TF = MI.getOperand(1).getTargetFlags();
+
+    MIBLO.addGlobalAddress(GV, Offs, TF);
+    MIBHI.addGlobalAddress(GV, Offs + 1, TF);
+    break;
+  }
+  case MachineOperand::MO_Immediate: {
+    unsigned Imm = MI.getOperand(1).getImm();
+
+    MIBLO.addImm(Imm);
+    MIBHI.addImm(Imm + 1);
+    break;
+  }
+  default:
+    llvm_unreachable("Unknown operand type!");
+  }
+
+  MIBLO.setMemRefs(MI.memoperands());
+  MIBHI.setMemRefs(MI.memoperands());
+
+  MI.eraseFromParent();
+  return true;
+}
+
+template <>
 bool M6502Expand16BitPseudo::expand<M6502::STabs16>(Block &MBB, BlockIt MBBI) {
   MachineInstr &MI = *MBBI;
   unsigned OpLo, OpHi, SrcLoReg, SrcHiReg;
@@ -233,7 +277,7 @@ bool M6502Expand16BitPseudo::
     return true;
 
   // ORI Rd, 0x0 is redundant.
-  if (Op == M6502::ORAimm && ImmVal == 0x0)
+  if (Op == M6502::ORimm && ImmVal == 0x0)
     return true;
 
   return false;
@@ -287,13 +331,13 @@ bool M6502Expand16BitPseudo::expand<M6502::ANDimm16>(Block &MBB, BlockIt MBBI) {
 }
 
 template <>
-bool M6502Expand16BitPseudo::expand<M6502::ORAreg16>(Block &MBB, BlockIt MBBI) {
-  return expandLogic(M6502::ORAreg, MBB, MBBI);
+bool M6502Expand16BitPseudo::expand<M6502::ORreg16>(Block &MBB, BlockIt MBBI) {
+  return expandLogic(M6502::ORreg, MBB, MBBI);
 }
 
 template <>
-bool M6502Expand16BitPseudo::expand<M6502::ORAimm16>(Block &MBB, BlockIt MBBI) {
-  return expandLogicImm(M6502::ORAimm, MBB, MBBI);
+bool M6502Expand16BitPseudo::expand<M6502::ORimm16>(Block &MBB, BlockIt MBBI) {
+  return expandLogicImm(M6502::ORimm, MBB, MBBI);
 }
 
 template <>
@@ -459,6 +503,7 @@ bool M6502Expand16BitPseudo::expandMI(Block &MBB, BlockIt MBBI) {
 
   switch (Opcode) {
     EXPAND(M6502::LDimm16);
+    EXPAND(M6502::LDabs16);
     EXPAND(M6502::STabs16);
     EXPAND(M6502::AD0reg16);
     EXPAND(M6502::ADCreg16);
@@ -466,8 +511,8 @@ bool M6502Expand16BitPseudo::expandMI(Block &MBB, BlockIt MBBI) {
     EXPAND(M6502::SBCreg16);
     EXPAND(M6502::ANDreg16);
     EXPAND(M6502::ANDimm16);
-    EXPAND(M6502::ORAreg16);
-    EXPAND(M6502::ORAimm16);
+    EXPAND(M6502::ORreg16);
+    EXPAND(M6502::ORimm16);
     EXPAND(M6502::EORreg16);
     EXPAND(M6502::SEXT);
     EXPAND(M6502::ZEXT);

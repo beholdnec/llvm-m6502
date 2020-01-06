@@ -166,16 +166,16 @@ multiclass ArithInst<string AsmName, SDPatternOperator Oper> {
 }
 
 let isCommutable = 1, Defs = [SREG] in
-  defm AD0 : ArithInst<"_AD0", add>; // FIXME: implicit SREG?
+  defm AD0 : ArithInst<"_AD0", add>;
 
 let isCommutable = 1, Defs = [SREG], Uses = [SREG] in
-  defm ADC : ArithInst<"_ADC", adde>; // FIXME: implicit SREG?
+  defm ADC : ArithInst<"_ADC", adde>;
 
 let Defs = [SREG] in
-  defm SB1 : ArithInst<"_SB1", sub>; // FIXME: implicit SREG?
+  defm SB1 : ArithInst<"_SB1", sub>;
 
 let Defs = [SREG], Uses = [SREG] in
-  defm SBC : ArithInst<"_SBC", sube>; // FIXME: implicit SREG?
+  defm SBC : ArithInst<"_SBC", sube>;
 
 let isCommutable = 1 in
   defm AND : ArithInst<"_AND", and>;
@@ -184,7 +184,7 @@ let isCommutable = 1 in
   defm EOR : ArithInst<"_EOR", xor>;
 
 let isCommutable = 1 in
-  defm ORA : ArithInst<"_ORA", or>;
+  defm OR : ArithInst<"_OR", or>;
   
 //===----------------------------------------------------------------------===//
 // Bit and bit-test instructions
@@ -240,6 +240,16 @@ isBarrier = 1 in
 
 let Defs = [SREG] in
 {
+  def CPimm : Pseudo<(outs),
+                     (ins GPR8:$src, i8imm:$k),
+                     "_CPimm\t$src, $k",
+                     [(M6502cmp i8:$src, imm:$k), (implicit SREG)]>;
+
+  def CPimm16 : Pseudo<(outs),
+                       (ins DREGS:$src, i16imm:$k),
+                       "_CPimm16\t$src, $k",
+                       [(M6502cmp i16:$src, imm:$k), (implicit SREG)]>;
+
   def CPreg : Pseudo<(outs),
                      (ins GPR8:$src1, GPR8:$src2),
                      "_CPreg\t$src1, $src2",

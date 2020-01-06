@@ -72,4 +72,13 @@ Register M6502RegisterInfo::getFrameRegister(const MachineFunction &MF) const {
   return M6502::SP;
 }
 
+void M6502RegisterInfo::splitReg(unsigned Reg,
+                                 unsigned &LoReg,
+                                 unsigned &HiReg) const {
+    assert(M6502::DREGSRegClass.contains(Reg) && "can only split 16-bit registers");
+
+    LoReg = getSubReg(Reg, M6502::sub_lo);
+    HiReg = getSubReg(Reg, M6502::sub_hi);
+}
+
 } // end of namespace llvm

@@ -52,6 +52,7 @@ public:
   }
 
   bool addInstSelector() override;
+  void addPreSched2() override;
 };
 } // namespace
 
@@ -63,7 +64,8 @@ extern "C" void LLVMInitializeM6502Target() {
   // Register the target.
   RegisterTargetMachine<M6502TargetMachine> X(getTheM6502Target());
 
-  // TODO: Initialize passes here.
+  auto &PR = *PassRegistry::getPassRegistry();
+  initializeM6502Expand16BitPseudoPass(PR);
 }
 
 const M6502Subtarget *M6502TargetMachine::getSubtargetImpl(const Function &) const {
@@ -79,6 +81,10 @@ bool M6502PassConfig::addInstSelector() {
   addPass(createM6502ISelDag(getM6502TargetMachine(), getOptLevel()));
 
   return false;
+}
+
+void M6502PassConfig::addPreSched2() {
+  addPass(createM6502Expand16BitPseudoPass());
 }
 
 } // end of namespace llvm

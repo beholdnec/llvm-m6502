@@ -11,6 +11,7 @@ add_public_tablegen_target(M6502CommonTableGen)
 
 add_llvm_target(M6502CodeGen
   M6502AsmPrinter.cpp
+  M6502Expand16BitPseudoInsts.cpp
   M6502FrameLowering.cpp
   M6502InstrInfo.cpp
   M6502ISelDAGToDAG.cpp

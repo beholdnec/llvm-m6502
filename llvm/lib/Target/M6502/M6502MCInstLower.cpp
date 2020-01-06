@@ -3,6 +3,7 @@
 #include "M6502MCInstLower.h"
 
 #include "M6502InstrInfo.h"
+#include "MCTargetDesc/M6502MCExpr.h"
 
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/MC/MCInst.h"
@@ -11,8 +12,25 @@ namespace llvm {
 
 MCOperand M6502MCInstLower::lowerSymbolOperand(const MachineOperand &MO,
                                                MCSymbol *Sym) const {
+  unsigned char TF = MO.getTargetFlags();
   const MCExpr *Expr = MCSymbolRefExpr::create(Sym, Ctx);
-  // TODO
+
+  bool IsNegated = false;
+  if (TF & M6502II::MO_NEG) { IsNegated = true; }
+
+  if (!MO.isJTI() && MO.getOffset()) {
+    Expr = MCBinaryExpr::createAdd(
+        Expr, MCConstantExpr::create(MO.getOffset(), Ctx), Ctx);
+  }
+
+  if (TF & M6502II::MO_LO) {
+    Expr = M6502MCExpr::create(M6502MCExpr::VK_M6502_LO8, Expr, IsNegated, Ctx);
+  } else if (TF & M6502II::MO_HI) {
+    Expr = M6502MCExpr::create(M6502MCExpr::VK_M6502_HI8, Expr, IsNegated, Ctx);
+  } else if (TF != 0) {
+    llvm_unreachable("Unknown target flag on symbol operand");
+  }
+
   return MCOperand::createExpr(Expr);
 }
 

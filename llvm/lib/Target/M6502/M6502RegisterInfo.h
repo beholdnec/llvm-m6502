@@ -31,6 +31,10 @@ public:
                            RegScavenger *RS = NULL) const override;
                            
   Register getFrameRegister(const MachineFunction &MF) const override;
+  
+  /// Splits a 16-bit `DREGS` register into the lo/hi register pair.
+  /// \param Reg A 16-bit register to split.
+  void splitReg(unsigned Reg, unsigned &LoReg, unsigned &HiReg) const;
 };
 
 } // end of namespace llvm

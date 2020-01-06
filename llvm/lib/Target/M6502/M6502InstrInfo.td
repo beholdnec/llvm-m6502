@@ -161,7 +161,23 @@ multiclass ArithInst<string AsmName, SDPatternOperator Oper> {
                        AsmName # "reg16\t$dst, $r",
                        [(set i16:$dst, (Oper DREGS:$src, DREGS:$r)), (implicit SREG)]>;
 
-    // TODO: Absolute address, Indirect address, etc.
+    // Absolute address
+    // FIXME: codegen never emits this instruction. Fix load-folding.
+    let mayLoad = 1 in
+    def abs : Pseudo<(outs GPR8:$dst),
+                     (ins GPR8:$src, i16imm:$mem),
+                     AsmName # "abs\t$dst, $mem",
+                     [(set i8:$dst, (Oper GPR8:$src, (load imm:$mem))), (implicit SREG)]>;
+
+    // Absolute address 16-bit
+    // FIXME: codegen never emits this instruction. Fix load-folding.
+    let mayLoad = 1 in
+    def abs16 : Pseudo<(outs DREGS:$dst),
+                       (ins DREGS:$src, i16imm:$mem),
+                       AsmName # "abs16\t$dst, $mem",
+                       [(set i16:$dst, (Oper DREGS:$src, (load imm:$mem))), (implicit SREG)]>;
+
+    // TODO: Indirect address, etc.
   }
 }
 
@@ -185,6 +201,48 @@ let isCommutable = 1 in
 
 let isCommutable = 1 in
   defm OR : ArithInst<"_OR", or>;
+  
+//===----------------------------------------------------------------------===//
+// Increment and Decrement
+//===----------------------------------------------------------------------===//
+
+let Constraints = "$dst = $src",
+Defs = [SREG] in
+{
+  // These instructions do not modify the carry flag, and therefore
+  // cannot be used for 16-bit arithmetic.
+
+  def INreg : Pseudo<(outs GPR8:$dst),
+                     (ins GPR8:$src),
+                     "_INreg\t$dst",
+                     [(set i8:$dst, (add i8:$src, 1)), (implicit SREG)]>;
+                     
+  def DEreg : Pseudo<(outs GPR8:$dst),
+                     (ins GPR8:$src),
+                     "_DEreg\t$dst",
+                     [(set i8:$dst, (add i8:$src, -1)), (implicit SREG)]>;
+}
+
+let Defs = [SREG],
+mayLoad = 1,
+mayStore = 1 in
+{
+  def INabs : Pseudo<(outs),
+                     (ins i16imm:$mem),
+                     "_INabs\t$mem",
+                     [(store (add (i8 (load imm:$mem)), 1), imm:$mem), (implicit SREG)]>;
+
+  def DEabs : Pseudo<(outs),
+                     (ins i16imm:$mem),
+                     "_DEabs\t$mem",
+                     [(store (add (i8 (load imm:$mem)), -1), imm:$mem), (implicit SREG)]>;
+}
+
+def : Pat<(store (add (i8 (load (i16 (M6502Wrapper tglobaladdr:$mem)))), 1), (i16 (M6502Wrapper tglobaladdr:$mem))),
+          (INabs tglobaladdr:$mem)>;
+          
+def : Pat<(store (add (i8 (load (i16 (M6502Wrapper tglobaladdr:$mem)))), -1), (i16 (M6502Wrapper tglobaladdr:$mem))),
+          (DEabs tglobaladdr:$mem)>;
   
 //===----------------------------------------------------------------------===//
 // Bit and bit-test instructions
@@ -374,37 +432,45 @@ def STstk16 : StorePseudo<
   [(store i16:$src, addr:$dst)]
 >;
 
-// Load from memory addressed by pointer register
-
-def LDptr : LoadPseudo<
-  (outs GPR8:$reg),
-  (ins DREGS:$ptrreg),
-  "_LDptr\t$reg, $ptrreg",
-  [(set GPR8:$reg, (load DREGS:$ptrreg))]
->;
-
-def LDptr16 : LoadPseudo<
-  (outs DREGS:$reg),
-  (ins DREGS:$ptrreg),
-  "_LDptr16\t$reg, $ptrreg",
-  [(set DREGS:$reg, (load DREGS:$ptrreg))]
->;
-
 // Load from absolute memory address
 
-def LDabs : LoadPseudo<
-  (outs GPR8:$dst),
-  (ins i16imm:$src),
-  "_LDabs\t$dst, $src",
-  [(set GPR8:$dst, (load imm:$src))]
->;
+let canFoldAsLoad = 1,
+isReMaterializable = 1 in
+{
+  def LDabs : LoadPseudo<
+    (outs GPR8:$dst),
+    (ins i16imm:$src),
+    "_LDabs\t$dst, $src",
+    [(set GPR8:$dst, (load imm:$src))]
+  >;
 
-def LDabs16 : LoadPseudo<
-  (outs DREGS:$dst),
-  (ins i16imm:$src),
-  "_LDabs16\t$dst, $src",
-  [(set DREGS:$dst, (load imm:$src))]
->;
+  def LDabs16 : LoadPseudo<
+    (outs DREGS:$dst),
+    (ins i16imm:$src),
+    "_LDabs16\t$dst, $src",
+    [(set DREGS:$dst, (load imm:$src))]
+  >;
+}
+
+// Load from memory addressed by pointer register
+
+let canFoldAsLoad = 1,
+isReMaterializable = 1 in
+{
+  def LDptr : LoadPseudo<
+    (outs GPR8:$reg),
+    (ins DREGS:$ptrreg),
+    "_LDptr\t$reg, $ptrreg",
+    [(set GPR8:$reg, (load DREGS:$ptrreg))]
+  >;
+
+  def LDptr16 : LoadPseudo<
+    (outs DREGS:$reg),
+    (ins DREGS:$ptrreg),
+    "_LDptr16\t$reg, $ptrreg",
+    [(set DREGS:$reg, (load DREGS:$ptrreg))]
+  >;
+}
 
 // Store register to memory addressed by pointer register
 

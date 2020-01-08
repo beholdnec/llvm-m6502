@@ -384,8 +384,93 @@ bool M6502Expand16BitPseudo::expand<M6502::AD0reg16>(Block &MBB, BlockIt MBBI) {
 }
 
 template <>
+bool M6502Expand16BitPseudo::expand<M6502::AD0imm16>(Block &MBB, BlockIt MBBI) {
+  MachineInstr &MI = *MBBI;
+  unsigned DstLoReg, DstHiReg;
+  unsigned DstReg = MI.getOperand(0).getReg();
+  bool DstIsDead = MI.getOperand(0).isDead();
+  bool SrcIsKill = MI.getOperand(1).isKill();
+  bool ImpIsDead = MI.getOperand(3).isDead();
+  TRI->splitReg(DstReg, DstLoReg, DstHiReg);
+
+  auto MIBLO = buildMI(MBB, MBBI, M6502::AD0imm)
+    .addReg(DstLoReg, RegState::Define | getDeadRegState(DstIsDead))
+    .addReg(DstLoReg, getKillRegState(SrcIsKill));
+
+  auto MIBHI = buildMI(MBB, MBBI, M6502::ADCimm)
+    .addReg(DstHiReg, RegState::Define | getDeadRegState(DstIsDead))
+    .addReg(DstHiReg, getKillRegState(SrcIsKill));
+
+  switch (MI.getOperand(2).getType()) {
+  case MachineOperand::MO_GlobalAddress: {
+    const GlobalValue *GV = MI.getOperand(2).getGlobal();
+    int64_t Offs = MI.getOperand(2).getOffset();
+    unsigned TF = MI.getOperand(2).getTargetFlags();
+    MIBLO.addGlobalAddress(GV, Offs, TF | M6502II::MO_LO);
+    MIBHI.addGlobalAddress(GV, Offs, TF | M6502II::MO_HI);
+    break;
+  }
+  case MachineOperand::MO_Immediate: {
+    unsigned Imm = MI.getOperand(2).getImm();
+    MIBLO.addImm(Imm & 0xff);
+    MIBHI.addImm((Imm >> 8) & 0xff);
+    break;
+  }
+  default:
+    llvm_unreachable("Unknown operand type!");
+  }
+
+  if (ImpIsDead)
+    MIBHI->getOperand(3).setIsDead();
+
+  // SREG is always implicitly killed
+  MIBHI->getOperand(4).setIsKill();
+
+  MI.eraseFromParent();
+  return true;
+}
+
+template <>
 bool M6502Expand16BitPseudo::expand<M6502::ADCreg16>(Block &MBB, BlockIt MBBI) {
   return expandArith(M6502::ADCreg, M6502::ADCreg, MBB, MBBI);
+}
+
+template <>
+bool M6502Expand16BitPseudo::expand<M6502::ADCimm16>(Block &MBB, BlockIt MBBI) {
+  MachineInstr &MI = *MBBI;
+  unsigned OpLo, OpHi, DstLoReg, DstHiReg;
+  unsigned DstReg = MI.getOperand(0).getReg();
+  bool DstIsDead = MI.getOperand(0).isDead();
+  bool SrcIsKill = MI.getOperand(1).isKill();
+  bool ImpIsDead = MI.getOperand(3).isDead();
+  unsigned Imm = MI.getOperand(2).getImm();
+  unsigned Lo8 = Imm & 0xff;
+  unsigned Hi8 = (Imm >> 8) & 0xff;
+  OpLo = M6502::SBCimm;
+  OpHi = M6502::SBCimm;
+  TRI->splitReg(DstReg, DstLoReg, DstHiReg);
+
+  auto MIBLO = buildMI(MBB, MBBI, OpLo)
+    .addReg(DstLoReg, RegState::Define | getDeadRegState(DstIsDead))
+    .addReg(DstLoReg, getKillRegState(SrcIsKill))
+    .addImm(Lo8);
+
+  // SREG is always implicitly killed
+  MIBLO->getOperand(4).setIsKill();
+
+  auto MIBHI = buildMI(MBB, MBBI, OpHi)
+    .addReg(DstHiReg, RegState::Define | getDeadRegState(DstIsDead))
+    .addReg(DstHiReg, getKillRegState(SrcIsKill))
+    .addImm(Hi8);
+
+  if (ImpIsDead)
+    MIBHI->getOperand(3).setIsDead();
+
+  // SREG is always implicitly killed
+  MIBHI->getOperand(4).setIsKill();
+
+  MI.eraseFromParent();
+  return true;
 }
 
 template <>
@@ -394,8 +479,93 @@ bool M6502Expand16BitPseudo::expand<M6502::SB1reg16>(Block &MBB, BlockIt MBBI) {
 }
 
 template <>
+bool M6502Expand16BitPseudo::expand<M6502::SB1imm16>(Block &MBB, BlockIt MBBI) {
+  MachineInstr &MI = *MBBI;
+  unsigned DstLoReg, DstHiReg;
+  unsigned DstReg = MI.getOperand(0).getReg();
+  bool DstIsDead = MI.getOperand(0).isDead();
+  bool SrcIsKill = MI.getOperand(1).isKill();
+  bool ImpIsDead = MI.getOperand(3).isDead();
+  TRI->splitReg(DstReg, DstLoReg, DstHiReg);
+
+  auto MIBLO = buildMI(MBB, MBBI, M6502::SB1imm)
+    .addReg(DstLoReg, RegState::Define | getDeadRegState(DstIsDead))
+    .addReg(DstLoReg, getKillRegState(SrcIsKill));
+
+  auto MIBHI = buildMI(MBB, MBBI, M6502::SBCimm)
+    .addReg(DstHiReg, RegState::Define | getDeadRegState(DstIsDead))
+    .addReg(DstHiReg, getKillRegState(SrcIsKill));
+
+  switch (MI.getOperand(2).getType()) {
+  case MachineOperand::MO_GlobalAddress: {
+    const GlobalValue *GV = MI.getOperand(2).getGlobal();
+    int64_t Offs = MI.getOperand(2).getOffset();
+    unsigned TF = MI.getOperand(2).getTargetFlags();
+    MIBLO.addGlobalAddress(GV, Offs, TF | M6502II::MO_LO);
+    MIBHI.addGlobalAddress(GV, Offs, TF | M6502II::MO_HI);
+    break;
+  }
+  case MachineOperand::MO_Immediate: {
+    unsigned Imm = MI.getOperand(2).getImm();
+    MIBLO.addImm(Imm & 0xff);
+    MIBHI.addImm((Imm >> 8) & 0xff);
+    break;
+  }
+  default:
+    llvm_unreachable("Unknown operand type!");
+  }
+
+  if (ImpIsDead)
+    MIBHI->getOperand(3).setIsDead();
+
+  // SREG is always implicitly killed
+  MIBHI->getOperand(4).setIsKill();
+
+  MI.eraseFromParent();
+  return true;
+}
+
+template <>
 bool M6502Expand16BitPseudo::expand<M6502::SBCreg16>(Block &MBB, BlockIt MBBI) {
   return expandArith(M6502::SBCreg, M6502::SBCreg, MBB, MBBI);
+}
+
+template <>
+bool M6502Expand16BitPseudo::expand<M6502::SBCimm16>(Block &MBB, BlockIt MBBI) {
+  MachineInstr &MI = *MBBI;
+  unsigned OpLo, OpHi, DstLoReg, DstHiReg;
+  unsigned DstReg = MI.getOperand(0).getReg();
+  bool DstIsDead = MI.getOperand(0).isDead();
+  bool SrcIsKill = MI.getOperand(1).isKill();
+  bool ImpIsDead = MI.getOperand(3).isDead();
+  unsigned Imm = MI.getOperand(2).getImm();
+  unsigned Lo8 = Imm & 0xff;
+  unsigned Hi8 = (Imm >> 8) & 0xff;
+  OpLo = M6502::SBCimm;
+  OpHi = M6502::SBCimm;
+  TRI->splitReg(DstReg, DstLoReg, DstHiReg);
+
+  auto MIBLO = buildMI(MBB, MBBI, OpLo)
+    .addReg(DstLoReg, RegState::Define | getDeadRegState(DstIsDead))
+    .addReg(DstLoReg, getKillRegState(SrcIsKill))
+    .addImm(Lo8);
+
+  // SREG is always implicitly killed
+  MIBLO->getOperand(4).setIsKill();
+
+  auto MIBHI = buildMI(MBB, MBBI, OpHi)
+    .addReg(DstHiReg, RegState::Define | getDeadRegState(DstIsDead))
+    .addReg(DstHiReg, getKillRegState(SrcIsKill))
+    .addImm(Hi8);
+
+  if (ImpIsDead)
+    MIBHI->getOperand(3).setIsDead();
+
+  // SREG is always implicitly killed
+  MIBHI->getOperand(4).setIsKill();
+
+  MI.eraseFromParent();
+  return true;
 }
 
 template <> bool M6502Expand16BitPseudo::expand<M6502::SEXT>(Block &MBB, BlockIt MBBI) {
@@ -493,6 +663,30 @@ template <> bool M6502Expand16BitPseudo::expand<M6502::ZEXT>(Block &MBB, BlockIt
   return true;
 }
 
+template <> bool M6502Expand16BitPseudo::expand<M6502::Treg16>(Block &MBB, BlockIt MBBI) {
+  MachineInstr &MI = *MBBI;
+  unsigned DestLo, DestHi, SrcLo, SrcHi;
+
+  unsigned DstReg = MI.getOperand(0).getReg();
+  unsigned SrcReg = MI.getOperand(1).getReg();
+  bool DstIsDead = MI.getOperand(0).isDead();
+  bool SrcIsKill = MI.getOperand(1).isKill();
+
+  TRI->splitReg(DstReg, DestLo, DestHi);
+  TRI->splitReg(SrcReg,  SrcLo,  SrcHi);
+
+  // Copy each individual register with the `Treg` instruction.
+  buildMI(MBB, MBBI, M6502::Treg)
+    .addReg(DestLo, RegState::Define | getDeadRegState(DstIsDead))
+    .addReg(SrcLo, getKillRegState(SrcIsKill));
+  buildMI(MBB, MBBI, M6502::Treg)
+    .addReg(DestHi, RegState::Define | getDeadRegState(DstIsDead))
+    .addReg(SrcHi, getKillRegState(SrcIsKill));
+    
+  MI.eraseFromParent();
+  return true;
+}
+
 bool M6502Expand16BitPseudo::expandMI(Block &MBB, BlockIt MBBI) {
   MachineInstr &MI = *MBBI;
   int Opcode = MBBI->getOpcode();
@@ -506,9 +700,12 @@ bool M6502Expand16BitPseudo::expandMI(Block &MBB, BlockIt MBBI) {
     EXPAND(M6502::LDabs16);
     EXPAND(M6502::STabs16);
     EXPAND(M6502::AD0reg16);
+    EXPAND(M6502::AD0imm16);
     EXPAND(M6502::ADCreg16);
     EXPAND(M6502::SB1reg16);
+    EXPAND(M6502::SB1imm16);
     EXPAND(M6502::SBCreg16);
+    EXPAND(M6502::SBCimm16);
     EXPAND(M6502::ANDreg16);
     EXPAND(M6502::ANDimm16);
     EXPAND(M6502::ORreg16);
@@ -516,6 +713,7 @@ bool M6502Expand16BitPseudo::expandMI(Block &MBB, BlockIt MBBI) {
     EXPAND(M6502::EORreg16);
     EXPAND(M6502::SEXT);
     EXPAND(M6502::ZEXT);
+    EXPAND(M6502::Treg16);
   }
 #undef EXPAND
   return false;

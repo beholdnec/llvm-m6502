@@ -44,7 +44,9 @@ enum NodeType {
   // TST,
   /// Operand 0 and operand 1 are selection variable, operand 2
   /// is condition code and operand 3 is flag operand.
-  SELECT_CC
+  SELECT_CC,
+  /// Extract high byte of 16-bit value
+  EXTRACTHI,
 };
 
 } // end of namespace M6502ISD

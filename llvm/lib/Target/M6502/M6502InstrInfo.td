@@ -13,6 +13,7 @@ def SDT_M6502Wrapper : SDTypeProfile<1, 1, [SDTCisSameAs<0, 1>, SDTCisPtrTy<0>]>
 def SDT_M6502Brcond : SDTypeProfile<0, 2,
                                     [SDTCisVT<0, OtherVT>, SDTCisVT<1, i8>]>;
 def SDT_M6502Cmp : SDTypeProfile<0, 2, [SDTCisSameAs<0, 1>]>;
+def SDT_M6502Extract : SDTypeProfile<1, 1, [SDTCisVT<0, i8>, SDTCisVT<1, i16>]>;
 
 //===----------------------------------------------------------------------===//
 // M6502 Specific Node Definitions
@@ -40,6 +41,8 @@ def M6502cmpc : SDNode<"M6502ISD::CMPC", SDT_M6502Cmp, [SDNPInGlue, SDNPOutGlue]
 def M6502lsl : SDNode<"M6502ISD::LSL", SDTIntUnaryOp>;
 def M6502lsr : SDNode<"M6502ISD::LSR", SDTIntUnaryOp>;
 def M6502asr : SDNode<"M6502ISD::ASR", SDTIntUnaryOp>;
+
+def M6502extracthi : SDNode<"M6502ISD::EXTRACTHI", SDT_M6502Extract>;
 
 //===----------------------------------------------------------------------===//
 // M6502 Operands, Complex Patterns and Transformations Definitions.
@@ -535,6 +538,15 @@ def : Pat<(M6502call (i16 tglobaladdr:$dst)),
           (CALLk tglobaladdr:$dst)>;
 def : Pat<(M6502call (i16 texternalsym:$dst)),
           (CALLk texternalsym:$dst)>;
+
+// Extract high byte using shift (often occurs due to EXTRACT_ELEMENT)
+// FIXME: this pattern never seems to be caught
+def : Pat<(srl i16:$src, (i8 8)),
+          (ZEXT (EXTRACT_SUBREG i16:$src, sub_hi))>;
+
+// Extract high byte using explicit "M6502extracthi" node
+def : Pat<(M6502extracthi i16:$src),
+          (EXTRACT_SUBREG i16:$src, sub_hi)>;
 
 // `anyext`
 def : Pat<(i16 (anyext i8:$src)),

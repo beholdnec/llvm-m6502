@@ -195,6 +195,11 @@ SDValue M6502TargetLowering::LowerShifts(SDValue Op, SelectionDAG &DAG) const {
   uint64_t ShiftAmount = cast<ConstantSDNode>(N->getOperand(1))->getZExtValue();
   SDValue Victim = N->getOperand(0);
 
+  if (Op.getOpcode() == ISD::SRL && Op.getValueType() == MVT::i16 && ShiftAmount == 8) {
+    SDValue Hi = DAG.getNode(M6502ISD::EXTRACTHI, dl, MVT::i8, Victim);
+    return DAG.getZExtOrTrunc(Hi, dl, MVT::i16);
+  }
+
   switch (Op.getOpcode()) {
   case ISD::SRA:
     Opc8 = M6502ISD::ASR;

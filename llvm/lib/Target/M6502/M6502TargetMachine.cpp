@@ -51,6 +51,7 @@ public:
     return getTM<M6502TargetMachine>();
   }
 
+  bool addPreISel() override;
   bool addInstSelector() override;
   void addPreSched2() override;
 };
@@ -75,6 +76,12 @@ const M6502Subtarget *M6502TargetMachine::getSubtargetImpl(const Function &) con
 //===----------------------------------------------------------------------===//
 // Pass Pipeline Configuration
 //===----------------------------------------------------------------------===//
+
+bool M6502PassConfig::addPreISel() {
+  addPass(createM6502Expand16BitPreISelPass());
+
+  return false;
+}
 
 bool M6502PassConfig::addInstSelector() {
   // Install an instruction selector.

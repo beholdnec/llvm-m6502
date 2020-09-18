@@ -24,25 +24,25 @@ let Namespace = "M6502" in
 //  8-bit general purpose pseudo-registers in zero-page memory
 //===----------------------------------------------------------------------===//
 
-def R0 : M6502Reg<"r0">;
-def R1 : M6502Reg<"r1">;
-def R2 : M6502Reg<"r2">;
-def R3 : M6502Reg<"r3">;
-def R4 : M6502Reg<"r4">;
-def R5 : M6502Reg<"r5">;
-def R6 : M6502Reg<"r6">;
-def R7 : M6502Reg<"r7">;
 def SPL : M6502Reg<"SPL">;
 def SPH : M6502Reg<"SPH">;
+def R0L : M6502Reg<"R0L">;
+def R0H : M6502Reg<"R0H">;
+def R1L : M6502Reg<"R1L">;
+def R1H : M6502Reg<"R1H">;
+def R2L : M6502Reg<"R2L">;
+def R2H : M6502Reg<"R2H">;
+def R3L : M6502Reg<"R3L">;
+def R3H : M6502Reg<"R3H">;
 
 let SubRegIndices = [sub_lo, sub_hi],
 CoveredBySubRegs = 1 in
 {
-  def SP     : M6502Reg<"SP",      [SPL, SPH]>;
-  def R7R6   : M6502Reg<"r7:r6",   [R6, R7]>;
-  def R5R4   : M6502Reg<"r5:r4",   [R4, R5]>;
-  def R3R2   : M6502Reg<"r3:r2",   [R2, R3]>;
-  def R1R0   : M6502Reg<"r1:r0",   [R0, R1]>;
+  def SP : M6502Reg<"SP", [SPL, SPH]>;
+  def R0 : M6502Reg<"R0", [R0L, R0H]>;
+  def R1 : M6502Reg<"R1", [R1L, R1H]>;
+  def R2 : M6502Reg<"R2", [R2L, R2H]>;
+  def R3 : M6502Reg<"R3", [R3L, R3H]>;
 }
 
 //===----------------------------------------------------------------------===//
@@ -52,13 +52,13 @@ CoveredBySubRegs = 1 in
 // Main 8-bit register class.
 def GPR8 : RegisterClass<"M6502", [i8], 8,
   (
-    add R0, R1, R2, R3, R4, R5, R6, R7, SPL, SPH
+    add SPL, SPH, R0L, R0H, R1L, R1H, R2L, R2H, R3L, R3H
   )>;
 
 // Main 16-bit pair register class.
 def DREGS : RegisterClass<"M6502", [i16], 8,
   (
-    add R1R0, R3R2, R5R4, R7R6, SP
+    add SP, R0, R1, R2, R3
   )>;
 
 // Register class used for the stack read pseudo instruction.

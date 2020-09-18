@@ -65,6 +65,8 @@ public:
 private:
   SDValue getM6502Cmp(SDValue LHS, SDValue RHS, ISD::CondCode CC, SDValue &AVRcc,
                       SelectionDAG &DAG, SDLoc dl) const;
+  SDValue LowerAnd(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerExtractElement(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerShifts(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerBlockAddress(SDValue Op, SelectionDAG &DAG) const;

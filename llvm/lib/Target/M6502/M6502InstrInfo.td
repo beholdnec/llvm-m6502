@@ -34,6 +34,7 @@ def M6502Wrapper : SDNode<"M6502ISD::WRAPPER", SDT_M6502Wrapper>;
 def M6502brcond : SDNode<"M6502ISD::BRCOND", SDT_M6502Brcond,
                        [SDNPHasChain, SDNPInGlue]>;
 def M6502cmp : SDNode<"M6502ISD::CMP", SDT_M6502Cmp, [SDNPOutGlue]>;
+def M6502cmpc : SDNode<"M6502ISD::CMPC", SDT_M6502Cmp, [SDNPInGlue, SDNPOutGlue]>;
 
 // Shift nodes.
 def M6502lsl : SDNode<"M6502ISD::LSL", SDTIntUnaryOp>;
@@ -303,20 +304,25 @@ let Defs = [SREG] in
                      "_CPimm\t$src, $k",
                      [(M6502cmp i8:$src, imm:$k), (implicit SREG)]>;
 
-  def CPimm16 : Pseudo<(outs),
-                       (ins DREGS:$src, i16imm:$k),
-                       "_CPimm16\t$src, $k",
-                       [(M6502cmp i16:$src, imm:$k), (implicit SREG)]>;
-
   def CPreg : Pseudo<(outs),
                      (ins GPR8:$src1, GPR8:$src2),
                      "_CPreg\t$src1, $src2",
                      [(M6502cmp i8:$src1, i8:$src2), (implicit SREG)]>;
-                     
-  def CPreg16 : Pseudo<(outs),
-                       (ins DREGS:$src1, DREGS:$src2),
-                       "_CPreg16\t$src1, $src2",
-                       [(M6502cmp i16:$src1, i16:$src2), (implicit SREG)]>;
+}
+
+// FIXME: This is adapted from AVR, but M6502 has no equivalent to cpc.
+
+let Defs = [SREG], Uses = [SREG] in
+{
+  def CPCimm : Pseudo<(outs),
+                      (ins GPR8:$src, i8imm:$k),
+                      "_CPCimm\t$src, $k",
+                      [(M6502cmpc i8:$src, imm:$k), (implicit SREG)]>;
+
+  def CPCreg : Pseudo<(outs),
+                      (ins GPR8:$src1, GPR8:$src2),
+                      "_CPCreg\t$src1, $src2",
+                      [(M6502cmpc i8:$src1, i8:$src2), (implicit SREG)]>;
 }
 
 //===----------------------------------------------------------------------===//

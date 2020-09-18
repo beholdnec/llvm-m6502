@@ -41,6 +41,9 @@ M6502TargetLowering::M6502TargetLowering(const M6502TargetMachine &TM,
     setOperationAction(ISD::ADDE, VT, Legal);
     setOperationAction(ISD::SUBE, VT, Legal);
   }
+
+  setOperationAction(ISD::AND, MVT::i16, Custom);
+  setOperationAction(ISD::EXTRACT_ELEMENT, MVT::i8, Custom);
   
   // our shift instructions are only able to shift 1 bit at a time, so handle
   // this in a custom way.
@@ -56,8 +59,8 @@ M6502TargetLowering::M6502TargetLowering(const M6502TargetMachine &TM,
   
   setOperationAction(ISD::BR_CC, MVT::i8, Custom);
   setOperationAction(ISD::BR_CC, MVT::i16, Custom);
-  setOperationAction(ISD::BR_CC, MVT::i32, Custom);
-  setOperationAction(ISD::BR_CC, MVT::i64, Custom);
+  setOperationAction(ISD::BR_CC, MVT::i32, Expand);
+  setOperationAction(ISD::BR_CC, MVT::i64, Expand);
   setOperationAction(ISD::BRCOND, MVT::Other, Expand);
   
   setOperationAction(ISD::BR_JT, MVT::Other, Expand);
@@ -108,6 +111,53 @@ const char *M6502TargetLowering::getTargetNodeName(unsigned Opcode) const {
     NODE(SELECT_CC);
 #undef NODE
   }
+}
+
+SDValue M6502TargetLowering::LowerAnd(SDValue Op, SelectionDAG &DAG) const {
+  assert(Op->getValueType(0) == MVT::i16 && "Can only lower 16-bit operations");
+
+  SDValue LHS = Op.getOperand(0);
+  SDValue RHS = Op.getOperand(1);
+
+  if (ConstantSDNode* Const = dyn_cast<ConstantSDNode>(RHS)) {
+    if ((Const->getConstantIntValue()->getValue() & 0xff00) == 0) {
+      errs() << "Lowering And: " << "\n";
+      Op.dumpr();
+
+      SDLoc DL(Op);
+
+      // Reduce to 8-bit AND
+      SDValue LHS_0 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i8, LHS,
+                                  DAG.getIntPtrConstant(0, DL));
+      SDValue RHS_0 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i8, RHS,
+                                  DAG.getIntPtrConstant(0, DL));
+      SDValue Result_0 = DAG.getNode(ISD::AND, DL, MVT::i8, LHS_0, RHS_0);
+      SDValue Result = DAG.getNode(ISD::ZERO_EXTEND, DL, MVT::i16, Result_0);
+
+      errs() << "Lowered to:" << "\n";
+      Result.dumpr();
+
+      return Result;
+    }
+  }
+
+  return SDValue();
+}
+
+SDValue M6502TargetLowering::LowerExtractElement(SDValue Op, SelectionDAG &DAG) const {
+  SDValue Oper = Op.getOperand(0);
+  const APInt &Index = cast<ConstantSDNode>(Op.getOperand(1))->getAPIntValue();
+  SDLoc DL(Op);
+  assert(Op.getValueType() == MVT::i8 && Oper.getValueType() == MVT::i16 && "Can only extract i8 from i16");
+
+  errs() << "Lowering Extract_Element: " << "\n";
+  Op.dumpr();
+
+  if (Oper.getOpcode() == ISD::ZERO_EXTEND && Index == 1 && Oper.getOperand(0).getValueType() == MVT::i8) {
+    return DAG.getConstant(0, DL, MVT::i8);
+  }
+
+  return SDValue();
 }
 
 SDValue M6502TargetLowering::LowerShifts(SDValue Op, SelectionDAG &DAG) const {
@@ -308,78 +358,21 @@ SDValue M6502TargetLowering::getM6502Cmp(SDValue LHS, SDValue RHS, ISD::CondCode
   }
   }
 
-  // Expand 32 and 64 bit comparisons with custom CMP and CMPC nodes instead of
-  // using the default and/or/xor expansion code which is much longer.
-  if (VT == MVT::i32) {
-    SDValue LHSlo = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, LHS,
-                                DAG.getIntPtrConstant(0, DL));
-    SDValue LHShi = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, LHS,
-                                DAG.getIntPtrConstant(1, DL));
-    SDValue RHSlo = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, RHS,
-                                DAG.getIntPtrConstant(0, DL));
-    SDValue RHShi = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, RHS,
-                                DAG.getIntPtrConstant(1, DL));
-
-    // if (UseTest) {
-    //   // When using tst we only care about the highest part.
-    //   SDValue Top = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i8, LHShi,
-    //                             DAG.getIntPtrConstant(1, DL));
-    //   Cmp = DAG.getNode(M6502ISD::TST, DL, MVT::Glue, Top);
-    // } else {
-      Cmp = DAG.getNode(M6502ISD::CMP, DL, MVT::Glue, LHSlo, RHSlo);
-      Cmp = DAG.getNode(M6502ISD::CMPC, DL, MVT::Glue, LHShi, RHShi, Cmp);
-    // }
-  } else if (VT == MVT::i64) {
-    SDValue LHS_0 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i32, LHS,
-                                DAG.getIntPtrConstant(0, DL));
-    SDValue LHS_1 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i32, LHS,
-                                DAG.getIntPtrConstant(1, DL));
-
-    SDValue LHS0 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, LHS_0,
+  if (VT == MVT::i16) {
+    SDValue LHS0 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i8, LHS,
                                DAG.getIntPtrConstant(0, DL));
-    SDValue LHS1 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, LHS_0,
-                               DAG.getIntPtrConstant(1, DL));
-    SDValue LHS2 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, LHS_1,
-                               DAG.getIntPtrConstant(0, DL));
-    SDValue LHS3 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, LHS_1,
+    SDValue LHS1 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i8, LHS,
                                DAG.getIntPtrConstant(1, DL));
 
-    SDValue RHS_0 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i32, RHS,
-                                DAG.getIntPtrConstant(0, DL));
-    SDValue RHS_1 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i32, RHS,
-                                DAG.getIntPtrConstant(1, DL));
-
-    SDValue RHS0 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, RHS_0,
+    SDValue RHS0 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i8, RHS,
                                DAG.getIntPtrConstant(0, DL));
-    SDValue RHS1 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, RHS_0,
-                               DAG.getIntPtrConstant(1, DL));
-    SDValue RHS2 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, RHS_1,
-                               DAG.getIntPtrConstant(0, DL));
-    SDValue RHS3 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i16, RHS_1,
+    SDValue RHS1 = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i8, RHS,
                                DAG.getIntPtrConstant(1, DL));
 
-    // if (UseTest) {
-    //   // When using tst we only care about the highest part.
-    //   SDValue Top = DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i8, LHS3,
-    //                             DAG.getIntPtrConstant(1, DL));
-    //   Cmp = DAG.getNode(M6502ISD::TST, DL, MVT::Glue, Top);
-    // } else {
-      Cmp = DAG.getNode(M6502ISD::CMP, DL, MVT::Glue, LHS0, RHS0);
-      Cmp = DAG.getNode(M6502ISD::CMPC, DL, MVT::Glue, LHS1, RHS1, Cmp);
-      Cmp = DAG.getNode(M6502ISD::CMPC, DL, MVT::Glue, LHS2, RHS2, Cmp);
-      Cmp = DAG.getNode(M6502ISD::CMPC, DL, MVT::Glue, LHS3, RHS3, Cmp);
-    // }
-  } else if (VT == MVT::i8 || VT == MVT::i16) {
-    // if (UseTest) {
-    //   // When using tst we only care about the highest part.
-    //   Cmp = DAG.getNode(M6502ISD::TST, DL, MVT::Glue,
-    //                     (VT == MVT::i8)
-    //                         ? LHS
-    //                         : DAG.getNode(ISD::EXTRACT_ELEMENT, DL, MVT::i8,
-    //                                       LHS, DAG.getIntPtrConstant(1, DL)));
-    // } else {
-      Cmp = DAG.getNode(M6502ISD::CMP, DL, MVT::Glue, LHS, RHS);
-    // }
+    Cmp = DAG.getNode(M6502ISD::CMP, DL, MVT::Glue, LHS0, RHS0);
+    Cmp = DAG.getNode(M6502ISD::CMPC, DL, MVT::Glue, LHS1, RHS1, Cmp);
+  } else if (VT == MVT::i8) {
+    Cmp = DAG.getNode(M6502ISD::CMP, DL, MVT::Glue, LHS, RHS);
   } else {
     llvm_unreachable("Invalid comparison size");
   }
@@ -411,6 +404,10 @@ SDValue M6502TargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const
   switch (Op.getOpcode()) {
   default:
     llvm_unreachable("Don't know how to custom lower this!");
+  case ISD::AND:
+    return LowerAnd(Op, DAG);
+  case ISD::EXTRACT_ELEMENT:
+    return LowerExtractElement(Op, DAG);
   case ISD::SHL:
   case ISD::SRA:
   case ISD::SRL:

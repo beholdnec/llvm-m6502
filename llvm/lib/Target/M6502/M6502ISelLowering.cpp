@@ -250,6 +250,32 @@ SDValue M6502TargetLowering::LowerBlockAddress(SDValue Op,
   return DAG.getNode(M6502ISD::WRAPPER, SDLoc(Op), getPointerTy(DL), Result);
 }
 
+bool M6502TargetLowering::isLegalAddressingMode(const DataLayout &DL,
+                                                const AddrMode &AM, Type *Ty,
+                                                unsigned AS,
+                                                Instruction *I) const {
+  // No global is ever allowed as a base.
+  if (AM.BaseGV)
+    return false;
+
+  // Require an 8-bit unsigned offset.
+  if (!isUInt<8>(AM.BaseOffs))
+    return false;
+
+  switch (AM.Scale) {
+  case 0: // "r+i" or just "i", depending on HasBaseReg.
+    break;
+  case 1:
+    if (!AM.HasBaseReg) // allow "r+i".
+      break;
+    return false; // disallow "r+r" or "r+r+i".
+  default:
+    return false;
+  }
+
+  return true;
+}
+
 /// IntCCToM6502CC - Convert a DAG integer condition code to an M6502 CC.
 static M6502CC::CondCodes intCCToM6502CC(ISD::CondCode CC) {
   switch (CC) {

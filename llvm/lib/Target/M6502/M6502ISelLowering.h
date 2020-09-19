@@ -63,6 +63,9 @@ public:
   const char *getTargetNodeName(unsigned Opcode) const override;
   
   SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const override;
+  bool isLegalAddressingMode(const DataLayout &DL, const AddrMode &AM, Type *Ty,
+                             unsigned AS,
+                             Instruction *I = nullptr) const override;
 
 private:
   SDValue getM6502Cmp(SDValue LHS, SDValue RHS, ISD::CondCode CC, SDValue &AVRcc,

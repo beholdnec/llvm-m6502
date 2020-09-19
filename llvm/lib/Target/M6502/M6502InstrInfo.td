@@ -72,6 +72,21 @@ def M6502_COND_LO : PatLeaf<(i8 5)>;
 def M6502_COND_MI : PatLeaf<(i8 6)>;
 def M6502_COND_PL : PatLeaf<(i8 7)>;
 
+class ImmAsmOperand<string prefix, int width, string suffix> : AsmOperandClass {
+  let Name = prefix # "Imm" # width # suffix;
+  let RenderMethod = "addImmOperands";
+  let DiagnosticType = !strconcat("Invalid", Name);
+}
+
+class UImmAsmOperand<int width, string suffix = "">
+    : ImmAsmOperand<"U", width, suffix> {
+}
+
+def uimm8 : Operand<i16>, ImmLeaf<i16, [{return isUInt<8>(Imm);}]> {
+  let ParserMatchClass = UImmAsmOperand<8>;
+  let DecoderMethod = "decodeUImmOperand<8>";
+}
+
 //===----------------------------------------------------------------------===//
 //===----------------------------------------------------------------------===//
 // M6502 Instruction list
@@ -473,6 +488,13 @@ isReMaterializable = 1 in
     [(set GPR8:$reg, (load DREGS:$ptrreg))]
   >;
 
+  def LDptridx : LoadPseudo<
+    (outs GPR8:$dst),
+    (ins DREGS:$src, uimm8:$idx),
+    "_LDptridx\t$dst, $src, $idx",
+    [(set GPR8:$dst, (load (add DREGS:$src, uimm8:$idx)))]
+  >;
+
   def LDptr16 : LoadPseudo<
     (outs DREGS:$reg),
     (ins DREGS:$ptrreg),
@@ -488,6 +510,13 @@ def STptr : StorePseudo<
   (ins DREGS:$ptrreg, GPR8:$reg),
   "_STptr\t$ptrreg, $reg",
   [(store GPR8:$reg, i16:$ptrreg)]
+>;
+
+def STptridx : StorePseudo<
+  (outs),
+  (ins DREGS:$dst, uimm8:$idx, GPR8:$src),
+  "_STabsidx\t$dst, $idx, $src",
+  [(store GPR8:$src, (add DREGS:$dst, uimm8:$idx))]
 >;
 
 def STptr16 : StorePseudo<

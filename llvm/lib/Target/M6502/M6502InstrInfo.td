@@ -515,7 +515,7 @@ def STptr : StorePseudo<
 def STptridx : StorePseudo<
   (outs),
   (ins DREGS:$dst, uimm8:$idx, GPR8:$src),
-  "_STabsidx\t$dst, $idx, $src",
+  "_STptridx\t$dst, $idx, $src",
   [(store GPR8:$src, (add DREGS:$dst, uimm8:$idx))]
 >;
 

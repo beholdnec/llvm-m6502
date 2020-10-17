@@ -495,6 +495,14 @@ isReMaterializable = 1 in
     [(set GPR8:$dst, (load (add DREGS:$src, uimm8:$idx)))]
   >;
 
+  // Indexed indirect instructions are NOT safe unless the pointer resides in zero-page memory.
+  def LDindidx : LoadPseudo<
+    (outs GPR8:$dst),
+    (ins i16imm:$ptr, uimm8:$idx),
+    "_LDindidx\t$dst, $ptr, $idx",
+    [(set GPR8:$dst, (load (add (load imm:$ptr), uimm8:$idx)))]
+  >;
+
   def LDptr16 : LoadPseudo<
     (outs DREGS:$reg),
     (ins DREGS:$ptrreg),
@@ -540,6 +548,17 @@ def STabs16 : StorePseudo<
   (ins i16imm:$dst, DREGS:$src),
   "_STabs16\t$dst, $src",
   [(store DREGS:$src, imm:$dst)]
+>;
+
+// Store register to indirect memory address
+
+// Indexed indirect instructions are NOT safe unless the pointer resides in zero-page memory.
+
+def STindidx : StorePseudo<
+  (outs),
+  (ins i16imm:$ptr, uimm8:$idx, GPR8:$src),
+  "_STindidx\t$ptr, $idx, $src",
+  [(store GPR8:$src, (add (load imm:$ptr), uimm8:$idx))]
 >;
 
 // Sign- and zero-extension
@@ -596,10 +615,14 @@ def : Pat<(i8 (load (M6502Wrapper tglobaladdr:$dst))),
           (LDabs tglobaladdr:$dst)>;
 def : Pat<(i16 (load (M6502Wrapper tglobaladdr:$dst))),
           (LDabs16 tglobaladdr:$dst)>;
+def : Pat<(i8 (load (add (load (i16 (M6502Wrapper tglobaladdr:$ptr))), uimm8:$idx))),
+          (LDindidx tglobaladdr:$ptr, uimm8:$idx)>;
 def : Pat<(store i8:$src, (i16 (M6502Wrapper tglobaladdr:$dst))),
           (STabs tglobaladdr:$dst, i8:$src)>;
 def : Pat<(store i16:$src, (i16 (M6502Wrapper tglobaladdr:$dst))),
           (STabs16 tglobaladdr:$dst, i16:$src)>;
+def : Pat<(store i8:$src, (add (load (i16 (M6502Wrapper tglobaladdr:$ptr))), uimm8:$idx)),
+          (STindidx tglobaladdr:$ptr, uimm8:$idx, i8:$src)>;
 
 // the add instruction always reads and writes the carry flag. The carry flag
 // must be explicitly cleared.
